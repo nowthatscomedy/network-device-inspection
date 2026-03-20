@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import itertools
 import logging
+import re
 from collections.abc import Callable
 from datetime import datetime
 from zipfile import BadZipFile
@@ -24,6 +26,7 @@ from core.logging_config import init_logging
 from core.menu_i18n import (
     ask_yes_no,
     show_action_menu,
+    show_action_order_menu,
     show_main_menu,
     show_netmiko_device_types,
     show_settings_menu,
@@ -35,6 +38,53 @@ from core.validator import validate_dataframe
 
 logger = logging.getLogger(__name__)
 console = Console()
+
+_ACTION_LABEL_KEYS = {
+    "inspection": "main.modes.inspection",
+    "backup": "main.modes.backup",
+    "custom_commands": "main.modes.custom_commands",
+}
+_READ_ONLY_COMMAND_PREFIXES = (
+    "show ",
+    "display ",
+    "get ",
+    "ping ",
+    "traceroute ",
+    "terminal length",
+    "terminal pager",
+    "screen-length",
+    "enable",
+    "disable",
+    "end",
+    "exit",
+)
+_SESSION_IMPACT_PATTERNS = tuple(
+    re.compile(pattern, re.IGNORECASE)
+    for pattern in (
+        r"\bip address\b",
+        r"\bipv6 address\b",
+        r"\bip route\b",
+        r"\bipv6 route\b",
+        r"\bip default-gateway\b",
+        r"\bdefault-gateway\b",
+        r"\brouter (ospf|bgp|eigrp|rip|isis)\b",
+        r"\bneighbor\b",
+        r"\bshutdown\b",
+        r"\breload\b",
+        r"\breboot\b",
+        r"\bmanagement\b",
+        r"\bmgmt\b",
+        r"\bline vty\b",
+        r"\btransport input\b",
+        r"\baaa\b",
+        r"\busername\b",
+        r"\bpassword\b",
+        r"\baccess-class\b",
+        r"\bip access-list\b",
+        r"\bfirewall\b",
+        r"\bnat\b",
+    )
+)
 
 
 def _read_excel_with_retry(filepath: str) -> pd.DataFrame | None:
@@ -94,6 +144,7 @@ def _print_run_summary(
     settings: AppSettings,
     run_timestamp: str,
     log_file: str,
+    execution_order: str | None = None,
 ) -> None:
     table = Table(border_style="dim", expand=False, show_header=False)
     table.add_column(t("main.run_summary.item"), style="cyan")
@@ -102,6 +153,8 @@ def _print_run_summary(
     table.add_row(t("main.run_summary.mode"), mode)
     table.add_row(t("main.run_summary.devices"), str(device_count))
     table.add_row(t("main.run_summary.file"), filepath)
+    if execution_order:
+        table.add_row(t("main.run_summary.order"), execution_order)
     table.add_row(t("main.run_summary.timeout"), str(settings.timeout))
     table.add_row(t("main.run_summary.max_retries"), str(settings.max_retries))
     table.add_row(t("main.run_summary.max_workers"), str(settings.max_workers))
@@ -150,6 +203,190 @@ def _build_mode_label(action_choices: list[str]) -> str:
         if action in selected
     ]
     return " + ".join(ordered_labels)
+
+
+def _get_action_label(action: str) -> str:
+    return t(_ACTION_LABEL_KEYS.get(action, action))
+
+
+def _format_action_order(action_order: list[str]) -> str:
+    return " -> ".join(_get_action_label(action) for action in action_order)
+
+
+def _build_action_order_options(
+    action_choices: list[str],
+) -> list[tuple[str, list[str]]]:
+    if len(action_choices) <= 1:
+        return [(_format_action_order(action_choices), list(action_choices))]
+
+    return [
+        (_format_action_order(list(order)), list(order))
+        for order in itertools.permutations(action_choices)
+    ]
+
+
+def _flatten_custom_commands(
+    commands: list[str] | dict[str, list[str]] | None,
+) -> list[str]:
+    if commands is None:
+        return []
+    if isinstance(commands, list):
+        return [str(command).strip() for command in commands if str(command).strip()]
+
+    flattened: list[str] = []
+    seen: set[str] = set()
+    for device_commands in commands.values():
+        for command in device_commands:
+            normalized = str(command).strip()
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            flattened.append(normalized)
+    return flattened
+
+
+def _is_read_only_command(command: str) -> bool:
+    normalized = " ".join(command.strip().lower().split())
+    return any(normalized.startswith(prefix) for prefix in _READ_ONLY_COMMAND_PREFIXES)
+
+
+def _analyze_custom_command_payload(
+    commands: list[str] | dict[str, list[str]] | None,
+) -> dict[str, object]:
+    flattened = _flatten_custom_commands(commands)
+    session_impact_examples: list[str] = []
+    config_change_examples: list[str] = []
+    config_change_count = 0
+    session_impact_count = 0
+
+    for command in flattened:
+        normalized = " ".join(command.strip().lower().split())
+        if _is_read_only_command(normalized):
+            continue
+
+        config_change_count += 1
+        if len(config_change_examples) < 3:
+            config_change_examples.append(command)
+
+        if any(pattern.search(normalized) for pattern in _SESSION_IMPACT_PATTERNS):
+            session_impact_count += 1
+            if len(session_impact_examples) < 3:
+                session_impact_examples.append(command)
+
+    return {
+        "total_commands": len(flattened),
+        "config_change_count": config_change_count,
+        "session_impact_count": session_impact_count,
+        "config_change_examples": config_change_examples,
+        "session_impact_examples": session_impact_examples,
+    }
+
+
+def _recommend_action_order(
+    action_choices: list[str],
+    command_assessment: dict[str, object] | None = None,
+) -> list[str]:
+    selected = set(action_choices)
+    if "custom_commands" not in selected:
+        return list(action_choices)
+
+    session_impact_count = int((command_assessment or {}).get("session_impact_count", 0))
+    config_change_count = int((command_assessment or {}).get("config_change_count", 0))
+
+    if session_impact_count > 0:
+        preferred_order = ("inspection", "backup", "custom_commands")
+    elif config_change_count > 0:
+        preferred_order = ("backup", "custom_commands", "inspection")
+    else:
+        preferred_order = ("inspection", "backup", "custom_commands")
+
+    return [action for action in preferred_order if action in selected]
+
+
+def _build_execution_warning_lines(
+    action_order: list[str],
+    command_assessment: dict[str, object] | None = None,
+) -> list[str]:
+    warnings: list[str] = []
+    order_index = {action: idx for idx, action in enumerate(action_order)}
+    if "custom_commands" not in order_index:
+        return [t("main.execution_warning.no_special_risk")]
+
+    assessment = command_assessment or {}
+    config_change_count = int(assessment.get("config_change_count", 0))
+    session_impact_count = int(assessment.get("session_impact_count", 0))
+    session_examples = assessment.get("session_impact_examples", [])
+    config_examples = assessment.get("config_change_examples", [])
+
+    if session_impact_count > 0:
+        later_steps = [
+            _get_action_label(action)
+            for action in action_order
+            if order_index["custom_commands"] < order_index[action]
+        ]
+        if later_steps:
+            warnings.append(
+                t(
+                    "main.execution_warning.session_drop_before_followup",
+                    later_steps=", ".join(later_steps),
+                ),
+            )
+        else:
+            warnings.append(t("main.execution_warning.session_drop_without_followup"))
+
+        if session_examples:
+            warnings.append(
+                t(
+                    "main.execution_warning.session_impact_examples",
+                    commands=" / ".join(str(command) for command in session_examples),
+                ),
+            )
+
+    if config_change_count > 0 and "inspection" in order_index:
+        if order_index["inspection"] < order_index["custom_commands"]:
+            warnings.append(t("main.execution_warning.inspection_before_change"))
+        elif order_index["inspection"] > order_index["custom_commands"]:
+            warnings.append(t("main.execution_warning.inspection_after_change"))
+
+    if config_change_count > 0 and "backup" in order_index:
+        if order_index["backup"] < order_index["custom_commands"]:
+            warnings.append(t("main.execution_warning.backup_before_change"))
+        elif order_index["backup"] > order_index["custom_commands"]:
+            warnings.append(t("main.execution_warning.backup_after_change"))
+
+    if config_change_count > 0 and order_index["custom_commands"] == len(action_order) - 1:
+        warnings.append(t("main.execution_warning.no_followup_after_change"))
+
+    if config_change_count > 0 and len(action_order) == 1:
+        warnings.append(t("main.execution_warning.custom_only_change"))
+
+    if config_change_count == 0:
+        warnings.append(t("main.execution_warning.no_change_pattern_detected"))
+    elif config_examples:
+        warnings.append(
+            t(
+                "main.execution_warning.config_change_examples",
+                commands=" / ".join(str(command) for command in config_examples),
+            ),
+        )
+
+    warnings.append(t("main.execution_warning.keyword_based_notice"))
+    return warnings
+
+
+def _print_execution_warning(action_order: list[str], warning_lines: list[str]) -> None:
+    bullet_lines = "\n".join(f"- {line}" for line in warning_lines)
+    console.print(
+        Panel(
+            (
+                f"{t('main.execution_warning.selected_order')}: "
+                f"{_format_action_order(action_order)}\n\n{bullet_lines}"
+            ),
+            title=f"[bold yellow]{t('main.execution_warning.title')}[/bold yellow]",
+            border_style="yellow",
+            expand=False,
+        ),
+    )
 
 
 def _load_inventory_devices(settings: AppSettings) -> tuple[str, list[dict[str, object]]] | None:
@@ -253,11 +490,28 @@ def _run_selected_actions(settings: AppSettings) -> None:
     filepath, devices = inventory
 
     rendered_commands: list[str] | dict[str, list[str]] | None = None
+    command_assessment: dict[str, object] | None = None
     if run_custom_commands:
         command_payload = _load_custom_command_payload(devices)
         if command_payload is None:
             return
         devices, rendered_commands = command_payload
+        command_assessment = _analyze_custom_command_payload(rendered_commands)
+
+    order_options = _build_action_order_options(action_choices)
+    default_order = _recommend_action_order(action_choices, command_assessment)
+    default_order_label = _format_action_order(default_order)
+    action_order = default_order
+    if len(order_options) > 1:
+        selected_order = show_action_order_menu(
+            order_options,
+            default_label=default_order_label,
+        )
+        if not selected_order:
+            return
+        action_order = selected_order
+
+    execution_order_label = _format_action_order(action_order)
 
     dashboard = TuiDashboard(mode_label, len(devices))
     inspector = _create_inspector(
@@ -288,7 +542,21 @@ def _run_selected_actions(settings: AppSettings) -> None:
         else:
             logger.info(t("main.warning.no_order_columns"))
 
-    _print_run_summary(mode_label, len(devices), filepath, settings, run_timestamp, log_file)
+    warning_lines = _build_execution_warning_lines(action_order, command_assessment)
+
+    _print_run_summary(
+        mode_label,
+        len(devices),
+        filepath,
+        settings,
+        run_timestamp,
+        log_file,
+        execution_order=execution_order_label,
+    )
+    _print_execution_warning(action_order, warning_lines)
+    if not ask_yes_no(t("main.confirm.proceed_after_warning"), default=False):
+        logger.info(t("main.info.order_cancelled"))
+        return
     if not ask_yes_no(t("main.confirm.run_now"), default=True):
         logger.info(t("main.info.job_cancelled"))
         return
@@ -299,6 +567,7 @@ def _run_selected_actions(settings: AppSettings) -> None:
             inspection_mode=run_inspection,
             backup_mode=run_backup,
             custom_commands=rendered_commands,
+            action_order=action_order,
         )
     finally:
         dashboard.mark_completed(t("main.info.dashboard_completed_note"))

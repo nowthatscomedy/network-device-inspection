@@ -86,3 +86,44 @@ def test_build_mode_label_joins_selected_actions_in_fixed_order() -> None:
         "Inspection + Batch Command Input"
     )
     assert main._build_mode_label(["inspection", "backup"]) == "Inspection+Backup"
+
+
+def test_analyze_custom_command_payload_detects_config_change_and_session_risk() -> None:
+    analysis = main._analyze_custom_command_payload(
+        [
+            "show version",
+            "interface vlan 99",
+            " ip address 10.0.0.11 255.255.255.0",
+            "ip route 0.0.0.0 0.0.0.0 10.0.0.1",
+        ]
+    )
+
+    assert analysis["total_commands"] == 4
+    assert analysis["config_change_count"] == 3
+    assert analysis["session_impact_count"] == 2
+
+
+def test_recommend_action_order_prefers_post_change_validation_for_safe_changes() -> None:
+    order = main._recommend_action_order(
+        ["inspection", "backup", "custom_commands"],
+        {"config_change_count": 2, "session_impact_count": 0},
+    )
+    assert order == ["backup", "custom_commands", "inspection"]
+
+
+def test_build_execution_warning_lines_highlights_pre_change_inspection_and_session_risk() -> None:
+    set_locale("en", "en")
+
+    warnings = main._build_execution_warning_lines(
+        ["custom_commands", "inspection", "backup"],
+        {
+            "config_change_count": 2,
+            "session_impact_count": 1,
+            "session_impact_examples": ["ip address 10.0.0.11 255.255.255.0"],
+            "config_change_examples": ["hostname EDGE-01"],
+        },
+    )
+
+    assert any("session may drop" in warning.lower() for warning in warnings)
+    assert any("inspection can verify" in warning.lower() for warning in warnings)
+    assert any("backup file will capture" in warning.lower() for warning in warnings)

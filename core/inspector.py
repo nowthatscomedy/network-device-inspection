@@ -429,143 +429,178 @@ class NetworkInspector:
         backup_mode: bool = True,
         session_log_suffix: str | None = None,
         custom_commands: list[str] | None = None,
+        action_order: list[str] | None = None,
         on_phase_complete: Callable[[str], None] | None = None,
     ) -> tuple[dict, dict]:
-        """장비에 연결하고 명령어를 실행합니다."""
+        """Connect to a device and execute the requested phases."""
         retry_count = 0
-        last_error = None
-        self._print_cli_status(f"[{device['ip']}] 연결 테스트 시작 (TCP {device['port']})")
-        
+        self._print_cli_status(f"[{device['ip']}] TCP connectivity test started (port {device['port']})")
+
         if not self._test_tcping(device['ip'], device['port']):
-            self.logger.error("TCP 연결 테스트 실패 (%s:%s)", device['ip'], device['port'])
-            self._print_cli_status(f"[{device['ip']}] TCP 연결 테스트 실패")
-            return device, {"error": "TCP 연결 테스트 실패"}
-        self._print_cli_status(f"[{device['ip']}] TCP 연결 확인 완료")
-        
+            self.logger.error("TCP connectivity test failed (%s:%s)", device['ip'], device['port'])
+            self._print_cli_status(f"[{device['ip']}] TCP connectivity test failed")
+            return device, {"error": "TCP connectivity test failed"}
+        self._print_cli_status(f"[{device['ip']}] TCP connectivity test passed")
+
         session_log_filename = f"{device['ip']}_{device['vendor']}_{device['os']}"
         if session_log_suffix:
             session_log_filename = f"{session_log_filename}_{session_log_suffix}"
         session_log_file = os.path.join(self.session_log_dir, f"{session_log_filename}.log")
-        
+
         while retry_count < self.max_retries:
             try:
                 with open(session_log_file, 'a', encoding='utf-8') as log:
-                    log.write(f"\n{'='*50}\n")
-                    log.write(f"연결 시도 {retry_count + 1} - {datetime.now()}\n")
-                    log.write(f"장비: {device['ip']} ({device['vendor']} {device['os']})\n")
-                    log.write(f"{'='*50}\n\n")
+                    log.write(f"\n{'=' * 50}\n")
+                    log.write(f"Connection attempt {retry_count + 1} - {datetime.now()}\n")
+                    log.write(f"Device: {device['ip']} ({device['vendor']} {device['os']})\n")
+                    log.write(f"{'=' * 50}\n\n")
+
+                resolved_action_order = self._resolve_action_order(
+                    inspection_mode,
+                    backup_mode,
+                    custom_commands,
+                    action_order,
+                )
 
                 custom_handler = get_custom_handler(device, self.timeout, session_log_file)
                 if not custom_handler and is_custom_rule_pair(device.get("vendor", ""), device.get("os", "")):
                     if device.get("connection_type", "").lower() == "ssh":
                         from vendors.base import GenericParamikoHandler
+
                         vendor_key = device.get("vendor", "").strip().lower()
                         os_key = device.get("os", "").strip().lower()
                         handler_config = HANDLER_OVERRIDES.get(vendor_key, {}).get(os_key, {})
                         custom_handler = GenericParamikoHandler(
-                            device, self.timeout, session_log_file,
-                            handler_config=handler_config if handler_config else None
+                            device,
+                            self.timeout,
+                            session_log_file,
+                            handler_config=handler_config if handler_config else None,
                         )
                     else:
                         self.logger.warning(
-                            "커스텀 벤더/OS는 SSH만 Paramiko 공용 핸들러를 사용합니다: %s %s (%s)",
-                            device.get('vendor'), device.get('os'), device.get('connection_type')
+                            "Custom vendor/OS handlers are SSH-only: %s %s (%s)",
+                            device.get('vendor'),
+                            device.get('os'),
+                            device.get('connection_type'),
                         )
+
                 if custom_handler:
-                    self.logger.debug("커스텀 핸들러 사용: %s %s", device['vendor'], device['os'])
+                    self.logger.debug("Using custom handler: %s %s", device['vendor'], device['os'])
                     handler_connected = False
                     try:
-                        self._print_cli_status(f"[{device['ip']}] 커스텀 핸들러 연결 시작")
+                        self._print_cli_status(f"[{device['ip']}] Custom handler connect started")
                         custom_handler.connect()
                         handler_connected = True
                         custom_handler.enable()
-                        self._print_cli_status(f"[{device['ip']}] 커스텀 핸들러 연결 완료")
-                        
-                        inspection_results = {}
-                        
-                        if inspection_mode:
-                            commands = self._get_device_commands(
-                                device['vendor'],
-                                device['os']
+                        self._print_cli_status(f"[{device['ip']}] Custom handler ready")
+
+                        inspection_results: dict = {}
+                        inspection_commands = (
+                            self._get_device_commands(device['vendor'], device['os'])
+                            if inspection_mode
+                            else []
+                        )
+                        backup_cmd = (
+                            self._get_backup_command(device['vendor'], device['os'])
+                            if backup_mode
+                            else ""
+                        )
+
+                        def run_inspection_phase() -> str | None:
+                            self._print_cli_status(
+                                f"[{device['ip']}] Inspection command run started ({len(inspection_commands)} commands)"
                             )
-                            self._print_cli_status(f"[{device['ip']}] 점검 명령 {len(commands)}개 실행 시작")
-                            
-                            for idx, cmd in enumerate(commands, start=1):
+                            for idx, cmd in enumerate(inspection_commands, start=1):
                                 try:
-                                    self._print_cli_status(f"[{device['ip']}] 점검 명령 실행 {idx}/{len(commands)}: {cmd}")
+                                    self._print_cli_status(
+                                        f"[{device['ip']}] Inspection {idx}/{len(inspection_commands)}: {cmd}"
+                                    )
                                     output = custom_handler.send_command(cmd)
-                                    
                                     parsed = self._parse_command_output(
                                         device['vendor'],
                                         device['os'],
                                         cmd,
-                                        output
+                                        output,
                                     )
                                     inspection_results.update(parsed)
-                                except Exception as e:
-                                    self.logger.error("명령어 실행 실패 (%s - %s): %s", cmd, device['ip'], e)
-                                    inspection_results[f"error_{cmd}"] = str(e)
+                                except Exception as exc:
+                                    self.logger.error(
+                                        "Inspection command failed (%s - %s): %s",
+                                        cmd,
+                                        device['ip'],
+                                        exc,
+                                    )
+                                    inspection_results[f"error_{cmd}"] = str(exc)
+                            return None
 
-                        if on_phase_complete and inspection_mode:
-                            on_phase_complete('inspection')
-
-                        if custom_commands:
-                            self._print_cli_status(f"[{device['ip']}] 사용자 명령 {len(custom_commands)}개 실행 시작")
+                        def run_custom_command_phase() -> str | None:
+                            if not custom_commands:
+                                return None
+                            self._print_cli_status(
+                                f"[{device['ip']}] Batch command run started ({len(custom_commands)} commands)"
+                            )
                             for idx, cmd in enumerate(custom_commands, start=1):
                                 try:
                                     self._print_cli_status(
-                                        f"[{device['ip']}] 사용자 명령 실행 {idx}/{len(custom_commands)}: {cmd}"
+                                        f"[{device['ip']}] Batch command {idx}/{len(custom_commands)}: {cmd}"
                                     )
                                     custom_handler.send_command(cmd)
-                                except Exception as e:
-                                    self.logger.error("사용자 명령 실행 실패 (%s - %s): %s", cmd, device['ip'], e)
-                                    return device, {"error": f"사용자 명령 실행 실패: {str(e)}"}
-
-                        if backup_mode:
-                            backup_cmd = self._get_backup_command(
-                                device['vendor'],
-                                device['os']
-                            )
-                            if backup_cmd:
-                                try:
-                                    self._print_cli_status(f"[{device['ip']}] 백업 명령 실행: {backup_cmd}")
-                                    backup_output = custom_handler.send_command(backup_cmd, timeout=10)
-                                    
-                                    backup_filename = os.path.join(
-                                        self.backup_dir,
-                                        f"{device['ip']}_{device['vendor']}_{device['os']}.txt"
+                                except Exception as exc:
+                                    self.logger.error(
+                                        "Batch command failed (%s - %s): %s",
+                                        cmd,
+                                        device['ip'],
+                                        exc,
                                     )
-                                    with open(backup_filename, 'w', encoding='utf-8') as f:
-                                        f.write(backup_output)
-                                    self.logger.info("백업 파일 저장 완료: %s", backup_filename)
-                                    self._print_cli_status(f"[{device['ip']}] 백업 파일 저장 완료: {backup_filename}")
-                                    inspection_results["backup_file"] = backup_filename
-                                except Exception as e:
-                                    self.logger.error("백업 실패 (%s): %s", device['ip'], e)
-                                    inspection_results["backup_error"] = str(e)
-
-                        if on_phase_complete and backup_mode:
-                            on_phase_complete('backup')
-                        
-                        if custom_commands:
+                                    return f"Batch command failed: {str(exc)}"
                             inspection_results["custom_commands_executed"] = len(custom_commands)
+                            return None
+
+                        def run_backup_phase() -> str | None:
+                            if not backup_cmd:
+                                return None
+                            try:
+                                self._print_cli_status(f"[{device['ip']}] Backup command: {backup_cmd}")
+                                backup_output = custom_handler.send_command(backup_cmd, timeout=10)
+                                backup_filename = os.path.join(
+                                    self.backup_dir,
+                                    f"{device['ip']}_{device['vendor']}_{device['os']}.txt",
+                                )
+                                with open(backup_filename, 'w', encoding='utf-8') as backup_file:
+                                    backup_file.write(backup_output)
+                                self.logger.info("Backup file saved: %s", backup_filename)
+                                self._print_cli_status(f"[{device['ip']}] Backup file saved: {backup_filename}")
+                                inspection_results["backup_file"] = backup_filename
+                            except Exception as exc:
+                                self.logger.error("Backup failed (%s): %s", device['ip'], exc)
+                                inspection_results["backup_error"] = str(exc)
+                            return None
+
+                        phase_runners = {
+                            "inspection": run_inspection_phase,
+                            "custom_commands": run_custom_command_phase,
+                            "backup": run_backup_phase,
+                        }
+                        for phase_name in resolved_action_order:
+                            phase_error = phase_runners[phase_name]()
+                            if phase_error:
+                                return device, {"error": phase_error}
+                            if on_phase_complete:
+                                on_phase_complete(phase_name)
+
                         return device, inspection_results
-                    except Exception as e:
-                        self.logger.error("커스텀 핸들러 실행 실패 (%s): %s", device['ip'], e)
+                    except Exception as exc:
+                        self.logger.error("Custom handler execution failed (%s): %s", device['ip'], exc)
                         retry_count += 1
-                        last_error = e
-                        
                         with open(session_log_file, 'a', encoding='utf-8') as log:
-                            log.write(f"\n{'='*50}\n")
-                            log.write(f"커스텀 핸들러 실행 실패 ({retry_count}) - {datetime.now()}\n")
-                            log.write(f"오류: {str(e)}\n")
-                            log.write(f"{'='*50}\n\n")
-                        
+                            log.write(f"\n{'=' * 50}\n")
+                            log.write(f"Custom handler execution failed ({retry_count}) - {datetime.now()}\n")
+                            log.write(f"Error: {str(exc)}\n")
+                            log.write(f"{'=' * 50}\n\n")
                         if retry_count < self.max_retries:
                             time.sleep(2 ** retry_count)
                             continue
-                        else:
-                            return device, {"error": f"커스텀 핸들러 실행 실패: {str(e)}"}
+                        return device, {"error": f"Custom handler execution failed: {str(exc)}"}
                     finally:
                         if handler_connected:
                             try:
@@ -573,7 +608,7 @@ class NetworkInspector:
                                 time.sleep(self.reconnect_cooldown)
                             except Exception as disconnect_error:
                                 self.logger.debug(
-                                    "커스텀 핸들러 종료 중 경고 (%s): %s",
+                                    "Custom handler disconnect warning (%s): %s",
                                     device['ip'],
                                     disconnect_error,
                                 )
@@ -600,16 +635,18 @@ class NetworkInspector:
                         device_type = f"{vendor_key}_{os_key}_telnet"
                     else:
                         device_type = f"{vendor_key}_{os_key}"
-                    
+
                     if device['vendor'].lower() == 'juniper':
                         device_type = 'juniper_junos'
 
                     if override_used:
                         try:
                             from netmiko.ssh_dispatcher import CLASS_MAPPER
+
                             if device_type not in CLASS_MAPPER:
                                 self.logger.warning(
-                                    "Netmiko device_type 미지원 가능성: %s (custom override)", device_type
+                                    "Netmiko device_type may be unavailable: %s (custom override)",
+                                    device_type,
                                 )
                         except Exception:
                             pass
@@ -621,12 +658,11 @@ class NetworkInspector:
                         'username': str(device['username']),
                         'password': str(device['password']),
                         'port': int(device['port']),
-                        'connection_type': str(device['connection_type'])
+                        'connection_type': str(device['connection_type']),
                     }
-                    
                     if 'enable_password' in device and device['enable_password']:
                         safe_device['enable_password'] = str(device['enable_password'])
-                    
+
                     connection_params = {
                         'device_type': str(device_type),
                         'host': str(safe_device['ip']),
@@ -636,17 +672,19 @@ class NetworkInspector:
                         'secret': str(safe_device.get('enable_password', '')),
                         'timeout': int(self.timeout),
                         'session_log': str(session_log_file),
-                        'fast_cli': False
+                        'fast_cli': False,
                     }
                     try:
                         with ConnectHandler(**connection_params) as conn:
-                            self._print_cli_status(f"[{device['ip']}] Netmiko 연결 완료 ({device_type})")
+                            self._print_cli_status(f"[{device['ip']}] Netmiko connected ({device_type})")
                             conn.enable()
                             try:
                                 if not conn.check_enable_mode():
                                     enable_secret = safe_device.get('enable_password') or safe_device.get('password')
                                     self.logger.warning(
-                                        "enable 모드 미진입 감지: %s (%s)", device['ip'], device_type
+                                        "Enable mode not confirmed: %s (%s)",
+                                        device['ip'],
+                                        device_type,
                                     )
                                     if enable_secret:
                                         output = conn.send_command_timing("enable")
@@ -654,78 +692,117 @@ class NetworkInspector:
                                             conn.send_command_timing(enable_secret)
                                     if not conn.check_enable_mode():
                                         self.logger.warning(
-                                            "enable 모드 진입 실패: %s (%s)", device['ip'], device_type
+                                            "Enable mode entry failed: %s (%s)",
+                                            device['ip'],
+                                            device_type,
                                         )
-                            except Exception as e:
+                            except Exception as exc:
                                 self.logger.warning(
-                                    "enable 모드 확인/재시도 실패: %s (%s) - %s", device['ip'], device_type, e
+                                    "Enable mode check/retry failed: %s (%s) - %s",
+                                    device['ip'],
+                                    device_type,
+                                    exc,
                                 )
                             if not (device['vendor'].lower() == 'axgate' and device['os'].lower() == 'axgate'):
                                 conn.send_command_timing('terminal length 0')
-                            
-                            inspection_results = {}
-                            if inspection_mode:
-                                commands = self._get_device_commands(device['vendor'], device['os'])
-                                self._print_cli_status(f"[{device['ip']}] 점검 명령 {len(commands)}개 실행 시작")
-                                for idx, cmd in enumerate(commands, start=1):
-                                    self._print_cli_status(f"[{device['ip']}] 점검 명령 실행 {idx}/{len(commands)}: {cmd}")
+
+                            inspection_results: dict = {}
+                            inspection_commands = (
+                                self._get_device_commands(device['vendor'], device['os'])
+                                if inspection_mode
+                                else []
+                            )
+                            backup_cmd = (
+                                self._get_backup_command(device['vendor'], device['os'])
+                                if backup_mode
+                                else ""
+                            )
+
+                            def run_inspection_phase() -> str | None:
+                                self._print_cli_status(
+                                    f"[{device['ip']}] Inspection command run started ({len(inspection_commands)} commands)"
+                                )
+                                for idx, cmd in enumerate(inspection_commands, start=1):
+                                    self._print_cli_status(
+                                        f"[{device['ip']}] Inspection {idx}/{len(inspection_commands)}: {cmd}"
+                                    )
                                     output = conn.send_command(cmd, read_timeout=30)
                                     parsed = self._parse_command_output(device['vendor'], device['os'], cmd, output)
                                     inspection_results.update(parsed)
+                                return None
 
-                            if on_phase_complete and inspection_mode:
-                                on_phase_complete('inspection')
-
-                            if custom_commands:
-                                self._print_cli_status(f"[{device['ip']}] 사용자 명령 {len(custom_commands)}개 실행 시작")
+                            def run_custom_command_phase() -> str | None:
+                                if not custom_commands:
+                                    return None
+                                self._print_cli_status(
+                                    f"[{device['ip']}] Batch command run started ({len(custom_commands)} commands)"
+                                )
                                 for idx, cmd in enumerate(custom_commands, start=1):
                                     self._print_cli_status(
-                                        f"[{device['ip']}] 사용자 명령 실행 {idx}/{len(custom_commands)}: {cmd}"
+                                        f"[{device['ip']}] Batch command {idx}/{len(custom_commands)}: {cmd}"
                                     )
                                     conn.send_command(cmd, read_timeout=30)
-                            
-                            if backup_mode:
-                                backup_cmd = self._get_backup_command(device['vendor'], device['os'])
-                                if backup_cmd:
-                                    self._print_cli_status(f"[{device['ip']}] 백업 명령 실행: {backup_cmd}")
-                                    backup_output = conn.send_command(backup_cmd, read_timeout=60)
-                                    backup_filename = os.path.join(self.backup_dir, f"{device['ip']}_{device['vendor']}_{device['os']}.txt")
-                                    with open(backup_filename, 'w', encoding='utf-8') as f:
-                                        f.write(backup_output)
-                                    self._print_cli_status(f"[{device['ip']}] 백업 파일 저장 완료: {backup_filename}")
-                                    inspection_results["backup_file"] = backup_filename
-
-                            if on_phase_complete and backup_mode:
-                                on_phase_complete('backup')
-
-                            if custom_commands:
                                 inspection_results["custom_commands_executed"] = len(custom_commands)
+                                return None
+
+                            def run_backup_phase() -> str | None:
+                                if not backup_cmd:
+                                    return None
+                                self._print_cli_status(f"[{device['ip']}] Backup command: {backup_cmd}")
+                                backup_output = conn.send_command(backup_cmd, read_timeout=60)
+                                backup_filename = os.path.join(
+                                    self.backup_dir,
+                                    f"{device['ip']}_{device['vendor']}_{device['os']}.txt",
+                                )
+                                with open(backup_filename, 'w', encoding='utf-8') as backup_file:
+                                    backup_file.write(backup_output)
+                                self._print_cli_status(f"[{device['ip']}] Backup file saved: {backup_filename}")
+                                inspection_results["backup_file"] = backup_filename
+                                return None
+
+                            phase_runners = {
+                                "inspection": run_inspection_phase,
+                                "custom_commands": run_custom_command_phase,
+                                "backup": run_backup_phase,
+                            }
+                            for phase_name in resolved_action_order:
+                                phase_error = phase_runners[phase_name]()
+                                if phase_error:
+                                    return device, {"error": phase_error}
+                                if on_phase_complete:
+                                    on_phase_complete(phase_name)
+
                             return device, inspection_results
-                    except Exception as e:
-                        last_error = e
+                    except Exception as exc:
                         retry_count += 1
-                        self.logger.warning("Netmiko 연결 시도 %d 실패 (%s): %s", retry_count, device['ip'], e)
+                        self.logger.warning(
+                            "Netmiko connection attempt %d failed (%s): %s",
+                            retry_count,
+                            device['ip'],
+                            exc,
+                        )
                         if retry_count >= self.max_retries:
-                            return device, {"error": f"Netmiko 연결 실패: {str(e)}"}
+                            return device, {"error": f"Netmiko connection failed: {str(exc)}"}
                         time.sleep(2 ** retry_count)
                         continue
-            except Exception as e:
-                last_error = e
+            except Exception as exc:
                 retry_count += 1
-                self.logger.warning("연결 시도 %d 실패 (%s): %s", retry_count, device['ip'], e)
-                
+                self.logger.warning(
+                    "Connection attempt %d failed (%s): %s",
+                    retry_count,
+                    device['ip'],
+                    exc,
+                )
                 with open(session_log_file, 'a', encoding='utf-8') as log:
-                    log.write(f"\n{'='*50}\n")
-                    log.write(f"연결 시도 {retry_count} 실패 - {datetime.now()}\n")
-                    log.write(f"오류: {str(e)}\n")
-                    log.write(f"{'='*50}\n\n")
-                
+                    log.write(f"\n{'=' * 50}\n")
+                    log.write(f"Connection attempt {retry_count} failed - {datetime.now()}\n")
+                    log.write(f"Error: {str(exc)}\n")
+                    log.write(f"{'=' * 50}\n\n")
                 if retry_count < self.max_retries:
                     time.sleep(2 ** retry_count)
                     continue
-                else:
-                    return device, {"error": f"최종 연결 실패: {str(e)}"}
-    
+                return device, {"error": f"Final connection failure: {str(exc)}"}
+
     def load_devices(self, devices: list[dict]):
         for idx, device in enumerate(devices, start=1):
             device['device_index'] = idx
@@ -895,11 +972,36 @@ class NetworkInspector:
                 device['_custom_command_values_path'],
             )
 
+    def _resolve_action_order(
+        self,
+        inspection_mode: bool,
+        backup_mode: bool,
+        custom_commands: list[str] | None = None,
+        action_order: list[str] | None = None,
+    ) -> list[str]:
+        available_actions: list[str] = []
+        if inspection_mode:
+            available_actions.append("inspection")
+        if custom_commands:
+            available_actions.append("custom_commands")
+        if backup_mode:
+            available_actions.append("backup")
+
+        if not action_order:
+            return available_actions
+
+        resolved = [action for action in action_order if action in available_actions]
+        for action in available_actions:
+            if action not in resolved:
+                resolved.append(action)
+        return resolved
+
     def run_selected_actions(
         self,
         inspection_mode: bool = False,
         backup_mode: bool = False,
         custom_commands: list[str] | dict[str, list[str]] | None = None,
+        action_order: list[str] | None = None,
     ) -> None:
         """Run the selected action set using a single session per device."""
         if not inspection_mode and not backup_mode and custom_commands is None:
@@ -914,7 +1016,13 @@ class NetworkInspector:
             selected_actions.append("backup")
         if custom_commands is not None:
             selected_actions.append("custom_commands")
-        action_label = "+".join(selected_actions)
+        execution_order = self._resolve_action_order(
+            inspection_mode,
+            backup_mode,
+            ["__present__"] if custom_commands is not None else None,
+            action_order,
+        )
+        action_label = " -> ".join(execution_order or selected_actions)
 
         self.logger.info("Selected action run started: %s", action_label)
         self._print_cli_status(f"Selected action run started: {action_label}")
@@ -940,6 +1048,7 @@ class NetworkInspector:
                     inspection_mode=inspection_mode,
                     backup_mode=backup_mode,
                     custom_commands=device_commands,
+                    action_order=action_order,
                 )
                 future_to_device[future] = device
 
@@ -1368,6 +1477,7 @@ class NetworkInspector:
         inspection_mode: bool,
         backup_mode: bool,
         custom_commands: list[str] | None = None,
+        action_order: list[str] | None = None,
         session_log_suffix: str | None = None,
     ) -> dict:
         """Run the selected action combination in a single device session."""
@@ -1396,6 +1506,7 @@ class NetworkInspector:
                 backup_mode=backup_mode,
                 session_log_suffix=session_log_suffix,
                 custom_commands=custom_commands,
+                action_order=action_order,
             )
 
             if 'error' in connection_results:

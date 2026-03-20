@@ -116,6 +116,37 @@ def show_action_menu() -> list[str] | None:
     return selected or None
 
 
+def show_action_order_menu(
+    order_options: list[tuple[str, list[str]]],
+    *,
+    default_label: str | None = None,
+) -> list[str] | None:
+    _clear()
+    console.print(
+        Panel(
+            t("menu.action_order.description"),
+            title=f"[bold cyan]{t('menu.action_order.title')}[/bold cyan]",
+            border_style="cyan",
+            expand=False,
+        ),
+    )
+    console.print()
+
+    choices = [{"name": label, "value": label} for label, _ in order_options]
+    selected = inquirer.select(
+        message=t("menu.action_order.prompt"),
+        choices=choices,
+        default=default_label,
+        pointer=">",
+        instruction=t("menu.action_order.instruction"),
+    ).execute()
+
+    for label, order in order_options:
+        if label == selected:
+            return order
+    return None
+
+
 def select_console_log_level(current_level: str) -> str:
     _clear()
     console.print(

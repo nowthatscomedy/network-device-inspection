@@ -188,6 +188,11 @@ You can combine:
 
 When multiple tasks are selected, each device is processed in a single session so
 inspection, command execution, and backup can run without reconnecting between steps.
+
+After selecting tasks, the CLI lets you choose the execution order explicitly.
+It also shows an order warning before the run, including keyword-based guidance for
+cases such as management IP changes, routing changes, or other commands that may
+disconnect the session or change what later inspection/backup captures.
 Batch command input supports two input types:
 
 - Plain command files: `.txt`, `.xlsx`, `.xls`, `.xlsm`

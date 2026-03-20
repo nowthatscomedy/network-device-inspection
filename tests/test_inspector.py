@@ -304,10 +304,12 @@ def test_run_selected_actions_accepts_per_device_command_map(
         inspection_mode: bool,
         backup_mode: bool,
         custom_commands: list[str] | None = None,
+        action_order: list[str] | None = None,
         session_log_suffix=None,
     ):
         assert inspection_mode is True
         assert backup_mode is True
+        assert action_order == ["backup", "custom_commands", "inspection"]
         captured[device["ip"]] = list(custom_commands or [])
         return {
             "ip": device["ip"],
@@ -331,6 +333,7 @@ def test_run_selected_actions_accepts_per_device_command_map(
             "192.0.2.11": ["show version"],
             "192.0.2.10": ["show ip interface brief", "show inventory"],
         },
+        action_order=["backup", "custom_commands", "inspection"],
     )
 
     assert captured["192.0.2.11"] == ["show version"]
@@ -351,6 +354,7 @@ def test_run_selected_actions_device_collects_backup_and_command_metadata(
         assert kwargs["inspection_mode"] is True
         assert kwargs["backup_mode"] is True
         assert kwargs["custom_commands"] == ["cmd1", "cmd2"]
+        assert kwargs["action_order"] == ["backup", "custom_commands", "inspection"]
         return target, {
             "Hostname": "sw1",
             "custom_commands_executed": 2,
@@ -364,6 +368,7 @@ def test_run_selected_actions_device_collects_backup_and_command_metadata(
         inspection_mode=True,
         backup_mode=True,
         custom_commands=["cmd1", "cmd2"],
+        action_order=["backup", "custom_commands", "inspection"],
     )
 
     assert result["status"] == "success"
@@ -373,6 +378,17 @@ def test_run_selected_actions_device_collects_backup_and_command_metadata(
     assert result["inspection_results"]["Command Profile ID"] == "PROFILE_A"
     assert result["inspection_results"]["Rendered Command Count"] == 2
     assert result["inspection_results"]["Template Values File"] == "values.csv"
+
+
+def test_resolve_action_order_filters_unselected_actions(inspector: NetworkInspector) -> None:
+    resolved = inspector._resolve_action_order(
+        inspection_mode=True,
+        backup_mode=False,
+        custom_commands=["cmd1"],
+        action_order=["backup", "custom_commands", "inspection"],
+    )
+
+    assert resolved == ["custom_commands", "inspection"]
 
 
 def test_run_custom_commands_device_includes_profile_metadata(
