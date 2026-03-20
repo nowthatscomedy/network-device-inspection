@@ -57,7 +57,7 @@ validator:
 
 main:
   modes:
-    custom_commands: "Custom Command Run"
+    custom_commands: "Batch Command Input"
     inspection: "Inspection"
     backup: "Backup"
     inspection_backup: "Inspection+Backup"
@@ -132,8 +132,8 @@ dashboard:
 menu:
   main:
     prompt: "Select a task:"
-    start: "Start Job (Inspection/Backup)"
-    custom_commands: "Run Command File"
+    start: "Start Job"
+    custom_commands: "Batch Command Input"
     settings: "Settings"
     netmiko_types: "Show Netmiko device_type List"
     exit: "Exit"
@@ -144,6 +144,7 @@ menu:
     inspect_only: "Inspection only (no backup)"
     backup_only: "Backup only (no inspection)"
     inspect_and_backup: "Inspection + Backup (both)"
+    batch_command_input: "Batch Command Input"
     back: "Back"
   netmiko:
     list_fetch_failed: "Failed to load device_type list: {error}"

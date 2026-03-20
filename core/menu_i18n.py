@@ -45,11 +45,10 @@ def show_main_menu() -> str:
     _show_banner()
     choices = [
         {"name": t("menu.main.start"), "value": "1"},
-        {"name": t("menu.main.custom_commands"), "value": "2"},
-        {"name": t("menu.main.settings"), "value": "3"},
-        {"name": t("menu.main.netmiko_types"), "value": "4"},
+        {"name": t("menu.main.settings"), "value": "2"},
+        {"name": t("menu.main.netmiko_types"), "value": "3"},
         Separator(),
-        {"name": t("menu.main.exit"), "value": "5"},
+        {"name": t("menu.main.exit"), "value": "4"},
     ]
     return inquirer.select(
         message=t("menu.main.prompt"),
@@ -106,6 +105,7 @@ def show_action_menu() -> str | None:
         {"name": t("menu.action.inspect_only"), "value": "1"},
         {"name": t("menu.action.backup_only"), "value": "2"},
         {"name": t("menu.action.inspect_and_backup"), "value": "3"},
+        {"name": t("menu.action.batch_command_input"), "value": "4"},
         Separator(),
         {"name": t("menu.action.back"), "value": None},
     ]

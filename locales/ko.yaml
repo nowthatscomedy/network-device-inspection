@@ -57,7 +57,7 @@ validator:
 
 main:
   modes:
-    custom_commands: "사용자 명령 실행"
+    custom_commands: "일괄 명령 입력"
     inspection: "점검"
     backup: "백업"
     inspection_backup: "점검+백업"
@@ -132,8 +132,8 @@ dashboard:
 menu:
   main:
     prompt: "작업을 선택하세요:"
-    start: "작업 시작 (점검/백업)"
-    custom_commands: "명령 파일 실행"
+    start: "작업 시작"
+    custom_commands: "일괄 명령 입력"
     settings: "설정"
     netmiko_types: "Netmiko device_type 목록 보기"
     exit: "종료"
@@ -144,6 +144,7 @@ menu:
     inspect_only: "점검만 실행 (백업 없음)"
     backup_only: "백업만 실행 (점검 없음)"
     inspect_and_backup: "점검 + 백업 (둘 다)"
+    batch_command_input: "일괄 명령 입력"
     back: "뒤로가기"
   netmiko:
     list_fetch_failed: "device_type 목록 로드 실패: {error}"

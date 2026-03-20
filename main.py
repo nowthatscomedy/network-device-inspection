@@ -242,6 +242,10 @@ def _run_inspection_backup(settings: AppSettings) -> None:
     if action_choice is None:
         return
 
+    if action_choice == "4":
+        _run_custom_commands(settings)
+        return
+
     mode_map = {
         "1": t("main.modes.inspection"),
         "2": t("main.modes.backup"),
@@ -336,12 +340,10 @@ def main() -> None:
             if menu_choice == "1":
                 _run_inspection_backup(settings)
             elif menu_choice == "2":
-                _run_custom_commands(settings)
-            elif menu_choice == "3":
                 show_settings_menu(settings)
-            elif menu_choice == "4":
+            elif menu_choice == "3":
                 show_netmiko_device_types()
-            elif menu_choice == "5":
+            elif menu_choice == "4":
                 console.print(f"[dim]{t('main.shutdown')}[/dim]")
                 return
     except KeyboardInterrupt:

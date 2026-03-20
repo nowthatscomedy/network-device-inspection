@@ -9,7 +9,7 @@ It reads device inventories from Excel files, connects via SSH/Telnet, runs insp
 
 - Multi-vendor architecture (`vendors/` modules)
 - Inspection / Backup / Inspection+Backup execution modes
-- Batch custom command execution from TXT or Excel files
+- Batch command input from TXT/XLSX files or `switch-config-builder` style YAML profiles
 - Per-device command rendering from `switch-config-builder` compatible YAML profiles and CSV/XLSX values
 - Excel input validation (required fields, duplicate IP, vendor/OS compatibility)
 - Retry and timeout controls for network I/O
@@ -58,10 +58,9 @@ python main.py
 Main menu:
 
 1. Start inspection/backup
-2. Run custom command file
-3. Change settings
-4. Show Netmiko `device_type` list
-5. Exit
+2. Change settings
+3. Show Netmiko `device_type` list
+4. Exit
 
 ## Excel Input Schema
 
@@ -179,7 +178,9 @@ Template file:
 
 ## Profile-Based Custom Commands
 
-Custom command mode now supports two inputs:
+The `Start Job` menu now includes a batch command input option.
+
+This mode supports two inputs:
 
 - Plain command files: `.txt`, `.xlsx`, `.xls`, `.xlsm`
 - Profile templates: `.yaml`, `.yml`
