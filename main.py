@@ -10,7 +10,12 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from core.cli_input import get_command_filepath_from_cli, get_filepath_from_cli
+from core.cli_input import (
+    get_command_filepath_from_cli,
+    get_filepath_from_cli,
+    get_template_values_filepath_from_cli,
+)
+from core.command_templates import build_profile_command_payload, is_profile_command_path
 from core.custom_exceptions import NetworkInspectorError
 from core.file_handler import read_command_file, read_excel_file, save_results_to_excel
 from core.i18n import set_locale, t
@@ -169,15 +174,36 @@ def _run_custom_commands(settings: AppSettings) -> None:
         return
     logger.info("COMMAND FILE : %s", command_path)
 
-    try:
-        commands = read_command_file(command_path)
-    except Exception as exc:
-        logger.error(t("main.warning.command_file_read_failed", error=exc))
-        return
+    rendered_commands: list[str] | dict[str, list[str]]
+    if is_profile_command_path(command_path):
+        template_values_path = get_template_values_filepath_from_cli()
+        if template_values_path:
+            logger.info("TEMPLATE VALUES FILE : %s", template_values_path)
 
-    if not commands:
-        logger.warning(t("main.warning.command_list_empty"))
-        return
+        try:
+            devices, rendered_commands, profile = build_profile_command_payload(
+                command_path,
+                devices,
+                template_values_path=template_values_path,
+            )
+        except ValueError as exc:
+            logger.error(t("main.warning.template_render_failed", error=exc))
+            return
+        except Exception as exc:
+            logger.error(t("main.warning.command_profile_read_failed", error=exc))
+            return
+
+        logger.info("COMMAND PROFILE ID : %s", profile.id)
+    else:
+        try:
+            rendered_commands = read_command_file(command_path)
+        except Exception as exc:
+            logger.error(t("main.warning.command_file_read_failed", error=exc))
+            return
+
+        if not rendered_commands:
+            logger.warning(t("main.warning.command_list_empty"))
+            return
 
     _print_run_summary(mode_label, len(devices), filepath, settings, run_timestamp, log_file)
     if not ask_yes_no(t("main.confirm.run_now"), default=True):
@@ -196,7 +222,7 @@ def _run_custom_commands(settings: AppSettings) -> None:
 
     dashboard.start()
     try:
-        inspector.run_custom_commands(commands)
+        inspector.run_custom_commands(rendered_commands)
     finally:
         dashboard.mark_completed(t("main.info.dashboard_completed_note"))
         dashboard.stop()

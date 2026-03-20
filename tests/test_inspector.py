@@ -215,3 +215,82 @@ def test_inspect_and_backup_devices_uses_single_session_path_for_all_devices(
     assert calls == {"combined": 1, "inspect": 0, "backup": 0}
     assert inspector.results[0]["status"] == "success"
     assert inspector.results[0]["backup_file"] == "backup/sw1.txt"
+
+
+def test_run_custom_commands_accepts_per_device_command_map(
+    inspector: NetworkInspector,
+    monkeypatch,
+) -> None:
+    devices = [
+        {
+            "ip": "192.0.2.11",
+            "vendor": "cisco",
+            "os": "ios",
+            "connection_type": "ssh",
+            "port": 22,
+            "username": "u",
+            "password": "p",
+        },
+        {
+            "ip": "192.0.2.10",
+            "vendor": "cisco",
+            "os": "ios",
+            "connection_type": "ssh",
+            "port": 22,
+            "username": "u",
+            "password": "p",
+        },
+    ]
+    inspector.load_devices(devices)
+    captured: dict[str, list[str]] = {}
+
+    def fake_run_device(device: dict[str, Any], commands: list[str], session_log_suffix=None):
+        captured[device["ip"]] = list(commands)
+        return {
+            "ip": device["ip"],
+            "vendor": device["vendor"],
+            "os": device["os"],
+            "status": "success",
+            "error_message": "",
+            "inspection_results": {"custom_commands_executed": len(commands)},
+            "_elapsed_seconds": 0.01,
+        }
+
+    monkeypatch.setattr(inspector, "_run_custom_commands_device", fake_run_device)
+    monkeypatch.setattr(inspector, "_print_cli_status", lambda message: None)
+    monkeypatch.setattr(inspector, "_emit_status_event", lambda *args, **kwargs: None)
+
+    inspector.run_custom_commands(
+        {
+            "192.0.2.11": ["show version"],
+            "192.0.2.10": ["show ip interface brief", "show inventory"],
+        }
+    )
+
+    assert captured["192.0.2.11"] == ["show version"]
+    assert captured["192.0.2.10"] == ["show ip interface brief", "show inventory"]
+
+
+def test_run_custom_commands_device_includes_profile_metadata(
+    inspector: NetworkInspector,
+    sample_device: dict[str, Any],
+    monkeypatch,
+) -> None:
+    device = dict(sample_device)
+    device["_custom_command_profile_id"] = "PROFILE_A"
+    device["_custom_command_rendered_count"] = 2
+    device["_custom_command_values_path"] = "values.csv"
+
+    def fake_connect(target: dict[str, Any], *args, **kwargs):
+        assert kwargs["custom_commands"] == ["cmd1", "cmd2"]
+        return target, {"custom_commands_executed": 2}
+
+    monkeypatch.setattr(inspector, "_connect_to_device", fake_connect)
+
+    result = inspector._run_custom_commands_device(device, ["cmd1", "cmd2"])
+
+    assert result["status"] == "success"
+    assert result["inspection_results"]["custom_commands_executed"] == 2
+    assert result["inspection_results"]["Command Profile ID"] == "PROFILE_A"
+    assert result["inspection_results"]["Rendered Command Count"] == 2
+    assert result["inspection_results"]["Template Values File"] == "values.csv"

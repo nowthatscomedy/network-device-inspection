@@ -4,13 +4,15 @@
 cli:
   path:
     excel_message: "Device Excel file path:"
-    command_message: "Command file path (txt/xlsx):"
+    command_message: "Command/profile file path (txt/xlsx/yaml):"
+    template_values_message: "Template values file path (optional, csv/xlsx):"
     long_instruction: "Tab: autocomplete / Enter: confirm / Ctrl+C: cancel"
     invalid_path: "Please enter a valid file path."
   warning:
     file_not_found: "Input file does not exist: {path}"
     unsupported_excel_extension: "Unsupported file extension (xlsx/xls/xlsm only): {suffix}"
-    unsupported_command_extension: "Unsupported file extension (txt/xlsx/xls/xlsm only): {suffix}"
+    unsupported_command_extension: "Unsupported file extension (txt/xlsx/xls/xlsm/yaml/yml only): {suffix}"
+    unsupported_tabular_extension: "Unsupported file extension (csv/xlsx/xls/xlsm only): {suffix}"
 
 ui:
   encrypted_excel_password: "Password for encrypted file:"
@@ -90,6 +92,9 @@ main:
     encrypted_excel_read_failed: "Failed to read encrypted Excel file: {error}"
     input_path_missing: "File path was not provided."
     command_path_missing: "Command file path was not provided."
+    command_profile_read_failed: "Failed to read command profile: {error}"
+    template_values_read_failed: "Failed to read template values file: {error}"
+    template_render_failed: "Failed to render per-device commands from the profile: {error}"
     command_file_read_failed: "Failed to read command file: {error}"
     command_list_empty: "No executable commands found in command file."
     no_order_columns: "No inspection items available for ordering."

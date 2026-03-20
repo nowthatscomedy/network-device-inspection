@@ -10,6 +10,7 @@ It reads device inventories from Excel files, connects via SSH/Telnet, runs insp
 - Multi-vendor architecture (`vendors/` modules)
 - Inspection / Backup / Inspection+Backup execution modes
 - Batch custom command execution from TXT or Excel files
+- Per-device command rendering from `switch-config-builder` compatible YAML profiles and CSV/XLSX values
 - Excel input validation (required fields, duplicate IP, vendor/OS compatibility)
 - Retry and timeout controls for network I/O
 - Real-time terminal dashboard during execution
@@ -175,6 +176,48 @@ Top-level sections:
 Template file:
 
 - `custom_rules.example.yaml`
+
+## Profile-Based Custom Commands
+
+Custom command mode now supports two inputs:
+
+- Plain command files: `.txt`, `.xlsx`, `.xls`, `.xlsm`
+- Profile templates: `.yaml`, `.yml`
+
+When a YAML profile is selected, the app can optionally load a separate template-values
+file (`.csv`, `.xlsx`, `.xls`, `.xlsm`) that follows the same header style used by
+`switch-config-builder`. Matching between inventory rows and template values is attempted
+with `device_id`, then `hostname`, then `ip`.
+
+Profile templates use `switch-config-builder` style variables and blocks:
+
+```yaml
+id: SAMPLE_PROFILE
+vendor: CISCO
+model: Catalyst
+firmware: IOS-XE 17.x
+variables:
+  new_hostname:
+    required: true
+    type: string
+  new_ip:
+    required: true
+    type: ipv4
+  new_mask:
+    required: true
+    type: ipv4
+blocks:
+  - name: base
+    lines:
+      - "configure terminal"
+      - "hostname {{ new_hostname }}"
+      - "interface vlan 99"
+      - " ip address {{ new_ip }} {{ new_mask }}"
+      - "end"
+```
+
+If a block has a matching boolean variable like `enable_voice_vlan: false`, the CLI
+runner skips the block named `voice_vlan` automatically.
 
 ## Outputs
 

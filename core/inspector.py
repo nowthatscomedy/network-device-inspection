@@ -880,7 +880,7 @@ class NetworkInspector:
             self.logger.info("장비 점검 완료")
             self._print_cli_status(f"장비 점검 완료 (성공 {success_count} / 실패 {fail_count})")
 
-    def run_custom_commands(self, commands: list[str]):
+    def run_custom_commands(self, commands: list[str] | dict[str, list[str]]):
         """사용자 명령어 목록을 장비에 순차 실행합니다."""
         self.logger.info("사용자 명령 실행 시작")
         self._print_cli_status("사용자 명령 실행을 시작합니다.")
@@ -894,12 +894,16 @@ class NetworkInspector:
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             future_to_device = {}
             for device in self.devices:
-                future = executor.submit(self._run_custom_commands_device, device, commands)
+                device_commands = commands
+                if isinstance(commands, dict):
+                    device_commands = commands.get(str(device.get('ip', '')).strip(), [])
+                future = executor.submit(self._run_custom_commands_device, device, device_commands)
                 future_to_device[future] = device
 
             for future in as_completed(future_to_device):
                 device = future_to_device[future]
                 status_message = "성공"
+                result = {}
                 try:
                     result = future.result()
                     with self.results_lock:
@@ -1184,8 +1188,14 @@ class NetworkInspector:
             'vendor': device['vendor'],
             'os': device['os'],
             'status': 'success',
-            'error_message': ''
+            'error_message': '',
+            'inspection_results': {},
         }
+
+        if not commands:
+            result['status'] = 'error'
+            result['error_message'] = 'No commands were assigned to this device.'
+            return result
 
         try:
             device, command_results = self._connect_to_device(
@@ -1200,6 +1210,24 @@ class NetworkInspector:
                 result['status'] = 'error'
                 result['error_message'] = command_results['error']
                 return result
+
+            result['inspection_results'] = {
+                key: value
+                for key, value in command_results.items()
+                if key not in {'error', 'backup_file', 'backup_error'}
+            }
+            if device.get('_custom_command_profile_id'):
+                result['inspection_results']['Command Profile ID'] = str(
+                    device['_custom_command_profile_id'],
+                )
+            if device.get('_custom_command_rendered_count') is not None:
+                result['inspection_results']['Rendered Command Count'] = device[
+                    '_custom_command_rendered_count'
+                ]
+            if device.get('_custom_command_values_path'):
+                result['inspection_results']['Template Values File'] = str(
+                    device['_custom_command_values_path'],
+                )
 
             self.logger.info("사용자 명령 실행 완료: %s", device['ip'])
             self._print_cli_status(f"[{device['ip']}] 사용자 명령 실행 완료")

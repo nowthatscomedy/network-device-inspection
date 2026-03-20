@@ -4,13 +4,15 @@ app:
 cli:
   path:
     excel_message: "장비 엑셀 파일 경로:"
-    command_message: "명령어 파일 경로 (txt/xlsx):"
+    command_message: "명령어/프로파일 파일 경로 (txt/xlsx/yaml):"
+    template_values_message: "템플릿 설정값 파일 경로 (선택, csv/xlsx):"
     long_instruction: "Tab: 자동완성 / Enter: 확인 / Ctrl+C: 취소"
     invalid_path: "유효한 파일 경로를 입력하세요."
   warning:
     file_not_found: "입력한 파일이 존재하지 않습니다: {path}"
     unsupported_excel_extension: "지원하지 않는 파일 형식입니다 (xlsx/xls/xlsm만 지원): {suffix}"
-    unsupported_command_extension: "지원하지 않는 파일 형식입니다 (txt/xlsx/xls/xlsm만 지원): {suffix}"
+    unsupported_command_extension: "지원하지 않는 파일 형식입니다 (txt/xlsx/xls/xlsm/yaml/yml만 지원): {suffix}"
+    unsupported_tabular_extension: "지원하지 않는 파일 형식입니다 (csv/xlsx/xls/xlsm만 지원): {suffix}"
 
 ui:
   encrypted_excel_password: "암호화된 파일 비밀번호:"
@@ -90,6 +92,9 @@ main:
     encrypted_excel_read_failed: "암호화된 엑셀 파일 읽기 실패: {error}"
     input_path_missing: "파일 경로가 입력되지 않았습니다."
     command_path_missing: "명령 파일 경로가 입력되지 않았습니다."
+    command_profile_read_failed: "프로파일 파일 읽기 실패: {error}"
+    template_values_read_failed: "템플릿 설정값 파일 읽기 실패: {error}"
+    template_render_failed: "프로파일로 장비별 명령을 생성하는 중 실패했습니다: {error}"
     command_file_read_failed: "명령 파일 읽기 실패: {error}"
     command_list_empty: "실행할 명령이 명령 파일에 없습니다."
     no_order_columns: "정렬 가능한 점검 항목이 없습니다."
