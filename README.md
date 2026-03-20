@@ -178,7 +178,7 @@ Template file:
 
 ## Profile-Based Custom Commands
 
-The `Start Job` menu now supports multi-select task execution.
+The `Tasks` menu now supports multi-select task execution.
 
 You can combine:
 

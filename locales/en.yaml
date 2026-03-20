@@ -151,14 +151,14 @@ dashboard:
 menu:
   main:
     prompt: "Select a task:"
-    start: "Start Job"
+    start: "Tasks"
     custom_commands: "Batch Command Input"
     settings: "Settings"
     netmiko_types: "Show Netmiko device_type List"
     exit: "Exit"
   action:
-    title: "Task Selection"
-    description: "Select one or more tasks to run in a single session per device."
+    title: "Tasks"
+    description: "Select one or more tasks to run together."
     prompt: "Actions:"
     inspect_only: "Inspection"
     backup_only: "Backup"
