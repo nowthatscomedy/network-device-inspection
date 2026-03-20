@@ -150,7 +150,7 @@ dashboard:
 
 menu:
   main:
-    prompt: "작업을 선택하세요:"
+    prompt: "메뉴를 선택하세요:"
     start: "작업"
     custom_commands: "일괄 명령 입력"
     settings: "설정"
@@ -166,7 +166,7 @@ menu:
     batch_command_input: "일괄 명령 입력"
     selected_summary: "현재 선택: {selected}"
     none_selected: "없음"
-    complete: "선택 완료"
+    complete: "작업 시작"
     instruction: "Enter: 선택/해제"
     select_one_warning: "계속하려면 작업을 하나 이상 선택하세요."
     back: "뒤로가기"

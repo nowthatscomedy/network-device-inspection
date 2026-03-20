@@ -150,7 +150,7 @@ dashboard:
 
 menu:
   main:
-    prompt: "Select a task:"
+    prompt: "Select a menu:"
     start: "Tasks"
     custom_commands: "Batch Command Input"
     settings: "Settings"
@@ -166,7 +166,7 @@ menu:
     batch_command_input: "Batch Command Input"
     selected_summary: "Current selection: {selected}"
     none_selected: "None"
-    complete: "Done"
+    complete: "Start Tasks"
     instruction: "Enter: toggle"
     select_one_warning: "Select at least one task to continue."
     back: "Back"

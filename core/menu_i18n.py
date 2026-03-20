@@ -20,6 +20,7 @@ _ACTION_MENU_ITEMS: tuple[tuple[str, str], ...] = (
     ("custom_commands", "menu.action.batch_command_input"),
 )
 _ACTION_MENU_DONE = "__done__"
+_ACTION_MENU_DEFAULT = _ACTION_MENU_ITEMS[0][0]
 
 _LANGUAGE_LABELS: dict[str, str] = {
     "en": "English (en)",
@@ -130,6 +131,7 @@ def _build_action_menu_choices(selected: set[str]) -> list[object]:
 def show_action_menu() -> list[str] | None:
     selected: set[str] = set()
     warning_message: str | None = None
+    current_choice = _ACTION_MENU_DEFAULT
 
     while True:
         _clear()
@@ -156,20 +158,27 @@ def show_action_menu() -> list[str] | None:
         choice = inquirer.select(
             message=t("menu.action.prompt"),
             choices=_build_action_menu_choices(selected),
+            default=current_choice,
             pointer=">",
             instruction=t("menu.action.instruction"),
+            amark="",
+            transformer=lambda _: "",
         ).execute()
 
         if choice is None:
+            _clear()
             return None
         if choice == _ACTION_MENU_DONE:
             ordered = _ordered_selected_actions(selected)
             if ordered:
+                _clear()
                 return ordered
             warning_message = t("menu.action.select_one_warning")
+            current_choice = _ACTION_MENU_DEFAULT
             continue
 
         warning_message = None
+        current_choice = choice
         if choice in selected:
             selected.remove(choice)
         else:
@@ -200,8 +209,11 @@ def show_action_order_menu(
         default=default_label,
         pointer=">",
         instruction=t("menu.action_order.instruction"),
+        amark="",
+        transformer=lambda _: "",
     ).execute()
 
+    _clear()
     for label, order in order_options:
         if label == selected:
             return order

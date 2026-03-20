@@ -33,6 +33,9 @@ def test_show_action_menu_toggles_selection_with_select(monkeypatch) -> None:
     assert result == ["inspection", "backup"]
     assert captured_calls
     assert captured_calls[0]["instruction"] == "Enter: toggle"
+    assert captured_calls[0]["default"] == "inspection"
+    assert captured_calls[1]["default"] == "backup"
+    assert captured_calls[2]["default"] == "inspection"
 
 
 def test_show_action_menu_requires_selection_before_done(monkeypatch) -> None:
@@ -58,6 +61,9 @@ def test_show_action_menu_requires_selection_before_done(monkeypatch) -> None:
 
     assert result == ["custom_commands"]
     assert len(captured_calls) == 3
+    assert captured_calls[0]["default"] == "inspection"
+    assert captured_calls[1]["default"] == "inspection"
+    assert captured_calls[2]["default"] == "custom_commands"
 
 
 def test_show_action_order_menu_includes_back_choice(monkeypatch) -> None:
