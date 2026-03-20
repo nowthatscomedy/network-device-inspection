@@ -89,7 +89,7 @@ def show_netmiko_device_types() -> None:
         input(t("menu.prompts.press_enter_back"))
 
 
-def show_action_menu() -> str | None:
+def show_action_menu() -> list[str] | None:
     _clear()
     console.print(
         Panel(
@@ -102,19 +102,18 @@ def show_action_menu() -> str | None:
     console.print()
 
     choices = [
-        {"name": t("menu.action.inspect_only"), "value": "1"},
-        {"name": t("menu.action.backup_only"), "value": "2"},
-        {"name": t("menu.action.inspect_and_backup"), "value": "3"},
-        {"name": t("menu.action.batch_command_input"), "value": "4"},
-        Separator(),
-        {"name": t("menu.action.back"), "value": None},
+        {"name": t("menu.action.inspect_only"), "value": "inspection"},
+        {"name": t("menu.action.backup_only"), "value": "backup"},
+        {"name": t("menu.action.batch_command_input"), "value": "custom_commands"},
     ]
-    return inquirer.select(
+    selected = inquirer.checkbox(
         message=t("menu.action.prompt"),
         choices=choices,
-        default="1",
         pointer=">",
+        mandatory=False,
+        instruction=t("menu.action.instruction"),
     ).execute()
+    return selected or None
 
 
 def select_console_log_level(current_level: str) -> str:

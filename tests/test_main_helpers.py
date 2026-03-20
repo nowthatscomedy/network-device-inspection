@@ -5,6 +5,7 @@ import re
 import pandas as pd
 
 import main
+from core.i18n import set_locale
 from core.settings import AppSettings
 
 
@@ -76,3 +77,12 @@ def test_init_run_returns_timestamp_and_logfile(monkeypatch) -> None:
     run_timestamp, log_file = main._init_run(settings)
     assert re.fullmatch(r"\d{8}_\d{6}", run_timestamp) is not None
     assert log_file == "logs/test.log"
+
+
+def test_build_mode_label_joins_selected_actions_in_fixed_order() -> None:
+    set_locale("en", "en")
+
+    assert main._build_mode_label(["custom_commands", "inspection"]) == (
+        "Inspection + Batch Command Input"
+    )
+    assert main._build_mode_label(["inspection", "backup"]) == "Inspection+Backup"

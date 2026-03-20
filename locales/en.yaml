@@ -139,12 +139,13 @@ menu:
     exit: "Exit"
   action:
     title: "Task Selection"
-    description: "Select the task to execute."
-    prompt: "Action:"
-    inspect_only: "Inspection only (no backup)"
-    backup_only: "Backup only (no inspection)"
+    description: "Select one or more tasks to run in a single session per device."
+    prompt: "Actions:"
+    inspect_only: "Inspection"
+    backup_only: "Backup"
     inspect_and_backup: "Inspection + Backup (both)"
     batch_command_input: "Batch Command Input"
+    instruction: "Space: toggle / Enter: start"
     back: "Back"
   netmiko:
     list_fetch_failed: "Failed to load device_type list: {error}"

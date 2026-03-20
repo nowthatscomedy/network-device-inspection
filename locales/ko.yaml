@@ -139,12 +139,13 @@ menu:
     exit: "종료"
   action:
     title: "작업 선택"
-    description: "실행할 작업을 선택하세요."
+    description: "한 장비 세션에서 함께 실행할 작업을 하나 이상 선택하세요."
     prompt: "작업:"
-    inspect_only: "점검만 실행 (백업 없음)"
-    backup_only: "백업만 실행 (점검 없음)"
+    inspect_only: "점검"
+    backup_only: "백업"
     inspect_and_backup: "점검 + 백업 (둘 다)"
     batch_command_input: "일괄 명령 입력"
+    instruction: "Space: 선택 / Enter: 시작"
     back: "뒤로가기"
   netmiko:
     list_fetch_failed: "device_type 목록 로드 실패: {error}"

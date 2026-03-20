@@ -8,7 +8,7 @@ It reads device inventories from Excel files, connects via SSH/Telnet, runs insp
 ## Key Features
 
 - Multi-vendor architecture (`vendors/` modules)
-- Inspection / Backup / Inspection+Backup execution modes
+- Inspection / Backup / Batch command input can be combined in one run
 - Batch command input from TXT/XLSX files or `switch-config-builder` style YAML profiles
 - Per-device command rendering from `switch-config-builder` compatible YAML profiles and CSV/XLSX values
 - Excel input validation (required fields, duplicate IP, vendor/OS compatibility)
@@ -178,9 +178,17 @@ Template file:
 
 ## Profile-Based Custom Commands
 
-The `Start Job` menu now includes a batch command input option.
+The `Start Job` menu now supports multi-select task execution.
 
-This mode supports two inputs:
+You can combine:
+
+- Inspection
+- Backup
+- Batch command input
+
+When multiple tasks are selected, each device is processed in a single session so
+inspection, command execution, and backup can run without reconnecting between steps.
+Batch command input supports two input types:
 
 - Plain command files: `.txt`, `.xlsx`, `.xls`, `.xlsm`
 - Profile templates: `.yaml`, `.yml`
@@ -230,7 +238,7 @@ Generated paths (timestamped):
 - Run logs: `logs/netops_inspector_YYYYMMDD_HHMMSS.log`
 - Session logs: `session_logs/YYYYMMDD_HHMMSS/[IP]_[vendor]_[os].log`
 
-In `inspection + backup` mode, each device uses a single connection for both steps to reduce reconnect-related failures.
+When backup is included, each device uses a single connection for all selected steps to reduce reconnect-related failures.
 
 ## Testing
 

@@ -134,16 +134,25 @@ def _print_result_summary(inspector: NetworkInspector, log_file: str) -> None:
     input(t("main.prompts.return_main_menu"))
 
 
-def _run_custom_commands(settings: AppSettings) -> None:
-    run_timestamp, log_file = _init_run(settings)
-    output_excel = "command_results.xlsx"
-    mode_label = t("main.modes.custom_commands")
+def _build_mode_label(action_choices: list[str]) -> str:
+    selected = set(action_choices)
+    if selected == {"inspection", "backup"}:
+        return t("main.modes.inspection_backup")
 
-    logger.info("RUN ID   : %s", run_timestamp)
-    logger.info("LOG FILE : %s", log_file)
-    logger.info("-----------------------------------------")
-    logger.info(t("main.info.mode_log_prefix", mode=mode_label))
+    labels = {
+        "inspection": t("main.modes.inspection"),
+        "backup": t("main.modes.backup"),
+        "custom_commands": t("main.modes.custom_commands"),
+    }
+    ordered_labels = [
+        labels[action]
+        for action in ("inspection", "backup", "custom_commands")
+        if action in selected
+    ]
+    return " + ".join(ordered_labels)
 
+
+def _load_inventory_devices(settings: AppSettings) -> tuple[str, list[dict[str, object]]] | None:
     filepath = get_filepath_from_cli()
     if not filepath:
         logger.warning(t("main.warning.input_path_missing"))
@@ -154,8 +163,12 @@ def _run_custom_commands(settings: AppSettings) -> None:
     if devices_df is None:
         return
     devices_df = validate_dataframe(devices_df, settings.input_column_aliases)
-    devices = devices_df.to_dict("records")
+    return filepath, devices_df.to_dict("records")
 
+
+def _load_custom_command_payload(
+    devices: list[dict[str, object]],
+) -> tuple[list[dict[str, object]], list[str] | dict[str, list[str]]] | None:
     vendor_os_pairs = {
         (
             str(device.get("vendor", "")).strip().lower(),
@@ -166,12 +179,12 @@ def _run_custom_commands(settings: AppSettings) -> None:
     if len(vendor_os_pairs) > 1:
         if not ask_yes_no(t("main.confirm.mixed_vendor_os")):
             logger.info(t("main.info.custom_commands_cancelled"))
-            return
+            return None
 
     command_path = get_command_filepath_from_cli()
     if not command_path:
         logger.warning(t("main.warning.command_path_missing"))
-        return
+        return None
     logger.info("COMMAND FILE : %s", command_path)
 
     rendered_commands: list[str] | dict[str, list[str]]
@@ -188,10 +201,10 @@ def _run_custom_commands(settings: AppSettings) -> None:
             )
         except ValueError as exc:
             logger.error(t("main.warning.template_render_failed", error=exc))
-            return
+            return None
         except Exception as exc:
             logger.error(t("main.warning.command_profile_read_failed", error=exc))
-            return
+            return None
 
         logger.info("COMMAND PROFILE ID : %s", profile.id)
     else:
@@ -199,93 +212,66 @@ def _run_custom_commands(settings: AppSettings) -> None:
             rendered_commands = read_command_file(command_path)
         except Exception as exc:
             logger.error(t("main.warning.command_file_read_failed", error=exc))
-            return
+            return None
 
         if not rendered_commands:
             logger.warning(t("main.warning.command_list_empty"))
-            return
+            return None
 
-    _print_run_summary(mode_label, len(devices), filepath, settings, run_timestamp, log_file)
-    if not ask_yes_no(t("main.confirm.run_now"), default=True):
-        logger.info(t("main.info.custom_commands_cancelled"))
+    return devices, rendered_commands
+
+
+def _run_selected_actions(settings: AppSettings) -> None:
+    action_choices = show_action_menu()
+    if not action_choices:
         return
 
-    dashboard = TuiDashboard(mode_label, len(devices))
-    inspector = _create_inspector(
-        output_excel,
-        run_timestamp,
-        settings,
-        inspection_only=True,
-        status_callback=dashboard.handle_event,
-    )
-    inspector.load_devices(devices)
+    run_inspection = "inspection" in action_choices
+    run_backup = "backup" in action_choices
+    run_custom_commands = "custom_commands" in action_choices
 
-    dashboard.start()
-    try:
-        inspector.run_custom_commands(rendered_commands)
-    finally:
-        dashboard.mark_completed(t("main.info.dashboard_completed_note"))
-        dashboard.stop()
-
-    if inspector.results:
-        save_results_to_excel(
-            inspector.results,
-            inspector.output_excel,
-            column_aliases=settings.column_aliases,
-        )
-
-    _print_result_summary(inspector, log_file)
-
-
-def _run_inspection_backup(settings: AppSettings) -> None:
-    action_choice = show_action_menu()
-    if action_choice is None:
+    if not any((run_inspection, run_backup, run_custom_commands)):
         return
 
-    if action_choice == "4":
-        _run_custom_commands(settings)
-        return
-
-    mode_map = {
-        "1": t("main.modes.inspection"),
-        "2": t("main.modes.backup"),
-        "3": t("main.modes.inspection_backup"),
-    }
-    mode_label = mode_map.get(action_choice, action_choice)
+    mode_label = _build_mode_label(action_choices)
 
     run_timestamp, log_file = _init_run(settings)
-    output_excel = "inspection_results.xlsx"
+    output_excel = (
+        "command_results.xlsx"
+        if run_custom_commands and not (run_inspection or run_backup)
+        else "inspection_results.xlsx"
+    )
 
     logger.info("RUN ID   : %s", run_timestamp)
     logger.info("LOG FILE : %s", log_file)
     logger.info("-----------------------------------------")
     logger.info(t("main.info.mode_log_prefix", mode=mode_label))
 
-    filepath = get_filepath_from_cli()
-    if not filepath:
-        logger.warning(t("main.warning.input_path_missing"))
+    inventory = _load_inventory_devices(settings)
+    if inventory is None:
         return
-    logger.info("INPUT   : %s", filepath)
+    filepath, devices = inventory
 
-    devices_df = _read_excel_with_retry(filepath)
-    if devices_df is None:
-        return
-    devices_df = validate_dataframe(devices_df, settings.input_column_aliases)
-    devices = devices_df.to_dict("records")
+    rendered_commands: list[str] | dict[str, list[str]] | None = None
+    if run_custom_commands:
+        command_payload = _load_custom_command_payload(devices)
+        if command_payload is None:
+            return
+        devices, rendered_commands = command_payload
 
     dashboard = TuiDashboard(mode_label, len(devices))
     inspector = _create_inspector(
         output_excel,
         run_timestamp,
         settings,
-        inspection_only=(action_choice == "1"),
-        backup_only=(action_choice == "2"),
+        inspection_only=not run_backup,
+        backup_only=(run_backup and not run_inspection and not run_custom_commands),
         status_callback=dashboard.handle_event,
     )
     inspector.load_devices(devices)
 
     column_order: list[str] | None = None
-    if action_choice in ("1", "3"):
+    if run_inspection:
         available_columns = inspector.get_available_inspection_columns(inspector.devices)
         if available_columns:
             profile_keys = inspector.get_device_profile_keys(inspector.devices)
@@ -309,12 +295,11 @@ def _run_inspection_backup(settings: AppSettings) -> None:
 
     dashboard.start()
     try:
-        if action_choice == "1":
-            inspector.inspect_devices(backup_only=False)
-        elif action_choice == "2":
-            inspector.inspect_devices(backup_only=True)
-        else:
-            inspector.inspect_and_backup_devices()
+        inspector.run_selected_actions(
+            inspection_mode=run_inspection,
+            backup_mode=run_backup,
+            custom_commands=rendered_commands,
+        )
     finally:
         dashboard.mark_completed(t("main.info.dashboard_completed_note"))
         dashboard.stop()
@@ -338,7 +323,7 @@ def main() -> None:
             menu_choice = show_main_menu()
 
             if menu_choice == "1":
-                _run_inspection_backup(settings)
+                _run_selected_actions(settings)
             elif menu_choice == "2":
                 show_settings_menu(settings)
             elif menu_choice == "3":

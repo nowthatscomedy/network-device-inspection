@@ -880,6 +880,137 @@ class NetworkInspector:
             self.logger.info("장비 점검 완료")
             self._print_cli_status(f"장비 점검 완료 (성공 {success_count} / 실패 {fail_count})")
 
+    def _attach_custom_command_metadata(self, result: dict, device: dict) -> None:
+        inspection_results = result.setdefault('inspection_results', {})
+        if device.get('_custom_command_profile_id'):
+            inspection_results['Command Profile ID'] = str(
+                device['_custom_command_profile_id'],
+            )
+        if device.get('_custom_command_rendered_count') is not None:
+            inspection_results['Rendered Command Count'] = device[
+                '_custom_command_rendered_count'
+            ]
+        if device.get('_custom_command_values_path'):
+            inspection_results['Template Values File'] = str(
+                device['_custom_command_values_path'],
+            )
+
+    def run_selected_actions(
+        self,
+        inspection_mode: bool = False,
+        backup_mode: bool = False,
+        custom_commands: list[str] | dict[str, list[str]] | None = None,
+    ) -> None:
+        """Run the selected action set using a single session per device."""
+        if not inspection_mode and not backup_mode and custom_commands is None:
+            self.logger.info("No actions selected. Skipping run.")
+            self.results = []
+            return
+
+        selected_actions: list[str] = []
+        if inspection_mode:
+            selected_actions.append("inspection")
+        if backup_mode:
+            selected_actions.append("backup")
+        if custom_commands is not None:
+            selected_actions.append("custom_commands")
+        action_label = "+".join(selected_actions)
+
+        self.logger.info("Selected action run started: %s", action_label)
+        self._print_cli_status(f"Selected action run started: {action_label}")
+
+        total_devices = len(self.devices)
+        completed_devices = 0
+        success_count = 0
+        fail_count = 0
+        self._print_cli_status(f"Total devices: {total_devices}")
+
+        with self.results_lock:
+            self.results = []
+
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            future_to_device = {}
+            for device in self.devices:
+                device_commands = custom_commands
+                if isinstance(custom_commands, dict):
+                    device_commands = custom_commands.get(str(device.get('ip', '')).strip(), [])
+                future = executor.submit(
+                    self._run_selected_actions_device,
+                    device,
+                    inspection_mode=inspection_mode,
+                    backup_mode=backup_mode,
+                    custom_commands=device_commands,
+                )
+                future_to_device[future] = device
+
+            for future in as_completed(future_to_device):
+                device = future_to_device[future]
+                result = {}
+                is_success = False
+                status_message = "failed"
+                try:
+                    result = future.result()
+                    is_success = result.get('status') != 'error'
+                    status_message = "success" if is_success else (
+                        f"failed - error: {result.get('error_message', 'unknown error')}"
+                    )
+                    with self.results_lock:
+                        self.results.append(result)
+                except Exception as e:
+                    self.logger.error("Selected action device run failed: %s - %s", device['ip'], e)
+                    with self.results_lock:
+                        self.results.append({
+                            'ip': device['ip'],
+                            'vendor': device['vendor'],
+                            'os': device['os'],
+                            'status': 'error',
+                            'error_message': str(e),
+                            'inspection_results': {},
+                            'backup_file': '',
+                        })
+                    status_message = f"failed - error: {str(e)}"
+                finally:
+                    completed_devices += 1
+                    if is_success:
+                        success_count += 1
+                    else:
+                        fail_count += 1
+                    elapsed_sec = result.get('_elapsed_seconds', 0) if isinstance(result, dict) else 0
+                    self._emit_status_event(
+                        "device_complete",
+                        success=is_success,
+                        ip=device['ip'],
+                        vendor=device.get('vendor', ''),
+                        os=device.get('os', ''),
+                        elapsed_seconds=elapsed_sec,
+                    )
+                    progress = self._format_progress_bar(completed_devices, total_devices)
+                    self.logger.info(
+                        "Selected action progress: %s | IP: %s | status: %s",
+                        progress,
+                        device['ip'],
+                        status_message,
+                    )
+                    self._print_cli_status(
+                        f"Progress: {progress} | IP: {device['ip']} | "
+                        f"Status: {status_message} | Success {success_count} / Fail {fail_count}"
+                    )
+
+        with self.results_lock:
+            device_order = {device['ip']: i for i, device in enumerate(self.devices)}
+            self.results.sort(key=lambda r: device_order.get(r.get('ip'), float('inf')))
+
+        self.logger.info(
+            "Selected action run completed: %s (success %s / fail %s)",
+            action_label,
+            success_count,
+            fail_count,
+        )
+        self._print_cli_status(
+            f"Selected action run completed ({action_label}) "
+            f"(success {success_count} / fail {fail_count})"
+        )
+
     def run_custom_commands(self, commands: list[str] | dict[str, list[str]]):
         """사용자 명령어 목록을 장비에 순차 실행합니다."""
         self.logger.info("사용자 명령 실행 시작")
@@ -1216,18 +1347,7 @@ class NetworkInspector:
                 for key, value in command_results.items()
                 if key not in {'error', 'backup_file', 'backup_error'}
             }
-            if device.get('_custom_command_profile_id'):
-                result['inspection_results']['Command Profile ID'] = str(
-                    device['_custom_command_profile_id'],
-                )
-            if device.get('_custom_command_rendered_count') is not None:
-                result['inspection_results']['Rendered Command Count'] = device[
-                    '_custom_command_rendered_count'
-                ]
-            if device.get('_custom_command_values_path'):
-                result['inspection_results']['Template Values File'] = str(
-                    device['_custom_command_values_path'],
-                )
+            self._attach_custom_command_metadata(result, device)
 
             self.logger.info("사용자 명령 실행 완료: %s", device['ip'])
             self._print_cli_status(f"[{device['ip']}] 사용자 명령 실행 완료")
@@ -1235,6 +1355,74 @@ class NetworkInspector:
 
         except Exception as e:
             self.logger.error("사용자 명령 실행 중 오류 발생: %s - %s", device['ip'], e)
+            result['status'] = 'error'
+            result['error_message'] = str(e)
+            return result
+        finally:
+            result['_elapsed_seconds'] = time.monotonic() - _start
+
+    def _run_selected_actions_device(
+        self,
+        device: dict,
+        *,
+        inspection_mode: bool,
+        backup_mode: bool,
+        custom_commands: list[str] | None = None,
+        session_log_suffix: str | None = None,
+    ) -> dict:
+        """Run the selected action combination in a single device session."""
+        _start = time.monotonic()
+        device_index = device.get('device_index', 'NA')
+        threading.current_thread().name = f"Device-{device_index}:Selected"
+        result = {
+            'ip': device['ip'],
+            'vendor': device['vendor'],
+            'os': device['os'],
+            'status': 'success',
+            'error_message': '',
+            'inspection_results': {},
+            'backup_file': '',
+        }
+
+        if custom_commands is not None and not custom_commands:
+            result['status'] = 'error'
+            result['error_message'] = 'No commands were assigned to this device.'
+            return result
+
+        try:
+            device, connection_results = self._connect_to_device(
+                device,
+                inspection_mode=inspection_mode,
+                backup_mode=backup_mode,
+                session_log_suffix=session_log_suffix,
+                custom_commands=custom_commands,
+            )
+
+            if 'error' in connection_results:
+                result['status'] = 'error'
+                result['error_message'] = connection_results['error']
+                return result
+
+            result['inspection_results'] = {
+                key: value
+                for key, value in connection_results.items()
+                if key not in {'error', 'backup_file', 'backup_error'}
+            }
+
+            if custom_commands is not None:
+                self._attach_custom_command_metadata(result, device)
+
+            if backup_mode:
+                if 'backup_file' in connection_results:
+                    result['backup_file'] = connection_results['backup_file']
+                elif 'backup_error' in connection_results:
+                    result['status'] = 'error'
+                    result['error_message'] = f"Backup: {connection_results['backup_error']}"
+
+            return result
+
+        except Exception as e:
+            self.logger.error("Selected action execution failed: %s - %s", device['ip'], e)
             result['status'] = 'error'
             result['error_message'] = str(e)
             return result
