@@ -14,6 +14,13 @@ from core.settings import AppSettings, save_settings
 logger = logging.getLogger(__name__)
 console = Console()
 
+_ACTION_MENU_ITEMS: tuple[tuple[str, str], ...] = (
+    ("inspection", "menu.action.inspect_only"),
+    ("backup", "menu.action.backup_only"),
+    ("custom_commands", "menu.action.batch_command_input"),
+)
+_ACTION_MENU_DONE = "__done__"
+
 _LANGUAGE_LABELS: dict[str, str] = {
     "en": "English (en)",
     "ko": "Korean (ko)",
@@ -89,31 +96,84 @@ def show_netmiko_device_types() -> None:
         input(t("menu.prompts.press_enter_back"))
 
 
-def show_action_menu() -> list[str] | None:
-    _clear()
-    console.print(
-        Panel(
-            t("menu.action.description"),
-            title=f"[bold cyan]{t('menu.action.title')}[/bold cyan]",
-            border_style="cyan",
-            expand=False,
-        ),
-    )
-    console.print()
+def _ordered_selected_actions(selected: set[str]) -> list[str]:
+    return [value for value, _ in _ACTION_MENU_ITEMS if value in selected]
 
-    choices = [
-        {"name": t("menu.action.inspect_only"), "value": "inspection"},
-        {"name": t("menu.action.backup_only"), "value": "backup"},
-        {"name": t("menu.action.batch_command_input"), "value": "custom_commands"},
+
+def _format_selected_actions(selected: set[str]) -> str:
+    ordered = _ordered_selected_actions(selected)
+    if not ordered:
+        return t("menu.action.none_selected")
+    labels = [
+        t(label_key)
+        for value, label_key in _ACTION_MENU_ITEMS
+        if value in selected
     ]
-    selected = inquirer.checkbox(
-        message=t("menu.action.prompt"),
-        choices=choices,
-        pointer=">",
-        mandatory=False,
-        instruction=t("menu.action.instruction"),
-    ).execute()
-    return selected or None
+    return ", ".join(labels)
+
+
+def _build_action_menu_choices(selected: set[str]) -> list[object]:
+    choices: list[object] = []
+    for value, label_key in _ACTION_MENU_ITEMS:
+        marker = "[x]" if value in selected else "[ ]"
+        choices.append({"name": f"{marker} {t(label_key)}", "value": value})
+    choices.extend(
+        [
+            Separator(),
+            {"name": t("menu.action.complete"), "value": _ACTION_MENU_DONE},
+            {"name": t("menu.action.back"), "value": None},
+        ]
+    )
+    return choices
+
+
+def show_action_menu() -> list[str] | None:
+    selected: set[str] = set()
+    warning_message: str | None = None
+
+    while True:
+        _clear()
+        console.print(
+            Panel(
+                "\n".join(
+                    [
+                        t("menu.action.description"),
+                        t(
+                            "menu.action.selected_summary",
+                            selected=_format_selected_actions(selected),
+                        ),
+                    ]
+                ),
+                title=f"[bold cyan]{t('menu.action.title')}[/bold cyan]",
+                border_style="cyan",
+                expand=False,
+            ),
+        )
+        if warning_message:
+            console.print(f"[yellow]{warning_message}[/yellow]")
+        console.print()
+
+        choice = inquirer.select(
+            message=t("menu.action.prompt"),
+            choices=_build_action_menu_choices(selected),
+            pointer=">",
+            instruction=t("menu.action.instruction"),
+        ).execute()
+
+        if choice is None:
+            return None
+        if choice == _ACTION_MENU_DONE:
+            ordered = _ordered_selected_actions(selected)
+            if ordered:
+                return ordered
+            warning_message = t("menu.action.select_one_warning")
+            continue
+
+        warning_message = None
+        if choice in selected:
+            selected.remove(choice)
+        else:
+            selected.add(choice)
 
 
 def show_action_order_menu(
@@ -132,7 +192,8 @@ def show_action_order_menu(
     )
     console.print()
 
-    choices = [{"name": label, "value": label} for label, _ in order_options]
+    choices: list[object] = [{"name": label, "value": label} for label, _ in order_options]
+    choices.extend([Separator(), {"name": t("menu.action.back"), "value": None}])
     selected = inquirer.select(
         message=t("menu.action_order.prompt"),
         choices=choices,
