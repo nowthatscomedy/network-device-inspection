@@ -1,0 +1,88 @@
+id: HANDREAMNET_SG_INITIAL_SETUP
+vendor: HANDREAMNET
+model: SG Switch Series
+firmware: SG CLI Guide v1.9
+description: Handreamnet SG series initial setup example with management IP and optional voice VLAN.
+description_ko: 한드림넷 SG 시리즈용 초기 설정 예시. 관리 IP와 선택형 Voice VLAN 포트 설정을 포함합니다.
+variables:
+  new_hostname:
+    required: true
+    type: string
+    description: Hostname to apply
+    description_ko: 장비에 적용할 호스트명
+  mgmt_ifname:
+    required: false
+    type: string
+    default: vlan1.1
+    description: Management interface name
+    description_ko: 관리 IP를 적용할 인터페이스 이름
+  mgmt_ip_cidr:
+    required: true
+    type: string
+    description: "Management IP in CIDR form, for example 192.168.10.11/24"
+    description_ko: "CIDR 형식의 관리 IP, 예: 192.168.10.11/24"
+  default_gw:
+    required: true
+    type: ipv4
+    description: Default gateway
+    description_ko: 기본 게이트웨이
+  enable_voice_vlan:
+    required: false
+    type: bool
+    default: false
+    description: Enable optional voice VLAN configuration
+    description_ko: Voice VLAN 설정 적용 여부
+  access_vlan:
+    required: false
+    type: int
+    default: 10
+    description: Data access VLAN
+    description_ko: 데이터 액세스 VLAN
+  access_vlan_name:
+    required: false
+    type: string
+    default: ACCESS
+    description: Data VLAN name
+    description_ko: 데이터 VLAN 이름
+  voice_vlan:
+    required: false
+    type: int
+    default: 20
+    description: Voice VLAN
+    description_ko: Voice VLAN 번호
+  voice_vlan_name:
+    required: false
+    type: string
+    default: VOICE
+    description: Voice VLAN name
+    description_ko: Voice VLAN 이름
+  voice_port_range:
+    required: false
+    type: string
+    default: ge1-2
+    description: Interface range for voice phones
+    description_ko: 전화기용 포트 범위
+blocks:
+  - name: base
+    lines:
+      - "configure terminal"
+      - "hostname {{ new_hostname }}"
+      - "interface {{ mgmt_ifname }}"
+      - " ip address {{ mgmt_ip_cidr }}"
+      - "exit"
+      - "ip route 0.0.0.0/0 {{ default_gw }}"
+  - name: voice_vlan
+    lines:
+      - "vlan database"
+      - "vlan {{ access_vlan }} bridge 1 name {{ access_vlan_name }} state enable"
+      - "vlan {{ voice_vlan }} bridge 1 name {{ voice_vlan_name }} state enable"
+      - "exit"
+      - "interface range {{ voice_port_range }}"
+      - " switchport mode hybrid"
+      - " switchport hybrid vlan {{ access_vlan }}"
+      - " switchport voice vlan {{ voice_vlan }}"
+      - "exit"
+  - name: save
+    lines:
+      - "end"
+      - "write"

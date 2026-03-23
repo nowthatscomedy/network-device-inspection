@@ -67,6 +67,31 @@ def make_inventory() -> list[dict[str, object]]:
     ]
 
 
+def make_handreamnet_inventory() -> list[dict[str, object]]:
+    return [
+        {
+            "ip": "192.0.2.21",
+            "vendor": "handreamnet",
+            "os": "sg",
+            "connection_type": "ssh",
+            "port": 22,
+            "username": "admin",
+            "password": "pw",
+            "device_id": "SG-01",
+        },
+        {
+            "ip": "192.0.2.22",
+            "vendor": "handreamnet",
+            "os": "sg",
+            "connection_type": "ssh",
+            "port": 22,
+            "username": "admin",
+            "password": "pw",
+            "device_id": "SG-02",
+        },
+    ]
+
+
 def test_is_profile_command_path_detects_yaml() -> None:
     assert is_profile_command_path("commands.yaml") is True
     assert is_profile_command_path("commands.txt") is False
@@ -162,3 +187,22 @@ def test_example_profile_files_render_per_device_commands() -> None:
     assert command_map["192.0.2.10"][1] == "hostname BR-1F-01"
     assert not any("switchport voice vlan 20" in line for line in command_map["192.0.2.10"])
     assert any("switchport voice vlan 30" in line for line in command_map["192.0.2.11"])
+
+
+def test_handreamnet_sg_example_profile_files_render_per_device_commands() -> None:
+    examples_dir = Path(__file__).resolve().parents[1] / "examples" / "batch_command_input"
+    profile_path = examples_dir / "profile_handreamnet_sg_initial_setup.yaml"
+    values_path = examples_dir / "profile_handreamnet_sg_initial_setup_values.csv"
+
+    devices, command_map, profile = build_profile_command_payload(
+        str(profile_path),
+        make_handreamnet_inventory(),
+        template_values_path=str(values_path),
+    )
+
+    assert profile.id == "HANDREAMNET_SG_INITIAL_SETUP"
+    assert devices[0]["_custom_command_profile_id"] == "HANDREAMNET_SG_INITIAL_SETUP"
+    assert command_map["192.0.2.21"][1] == "hostname SG-BRANCH-01"
+    assert any("ip address 192.168.10.11/24" in line for line in command_map["192.0.2.21"])
+    assert not any("switchport voice vlan 20" in line for line in command_map["192.0.2.21"])
+    assert any("switchport voice vlan 20" in line for line in command_map["192.0.2.22"])

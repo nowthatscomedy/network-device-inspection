@@ -1,0 +1,3 @@
+device_id,new_hostname,mgmt_ifname,mgmt_ip_cidr,default_gw,enable_voice_vlan,access_vlan,access_vlan_name,voice_vlan,voice_vlan_name,voice_port_range
+SG-01,SG-BRANCH-01,vlan1.1,192.168.10.11/24,192.168.10.254,false,10,ACCESS,20,VOICE,ge1-2
+SG-02,SG-BRANCH-02,vlan1.1,192.168.10.12/24,192.168.10.254,true,10,ACCESS,20,VOICE,ge1-4

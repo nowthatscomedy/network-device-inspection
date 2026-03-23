@@ -237,6 +237,8 @@ Example files in this repository:
 
 - `examples/batch_command_input/profile_access_switch.yaml`
 - `examples/batch_command_input/profile_access_switch_values.csv`
+- `examples/batch_command_input/profile_handreamnet_sg_initial_setup.yaml`
+- `examples/batch_command_input/profile_handreamnet_sg_initial_setup_values.csv`
 
 User workflow:
 
