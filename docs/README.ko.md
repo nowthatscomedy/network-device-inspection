@@ -176,6 +176,48 @@ Python 코드를 수정하지 않고 명령/파서를 확장할 수 있습니다
 
 - `custom_rules.example.yaml`
 
+## 변수형 일괄 명령 입력
+
+`작업 > 일괄 명령 입력`에서는 TXT/XLSX 명령 파일뿐 아니라 YAML 프로파일도 사용할 수 있습니다.
+YAML 프로파일을 사용하면 장비마다 다른 값(IP, 호스트명, 게이트웨이 등)을 변수로 받아
+장비별 명령어를 따로 렌더링해서 실행합니다.
+
+예시 파일:
+
+- `examples/batch_command_input/profile_access_switch.yaml`
+- `examples/batch_command_input/profile_access_switch_values.csv`
+
+사용 순서:
+
+1. 인벤토리 Excel에 접속 정보와 가능하면 `device_id`를 준비합니다.
+2. `작업` 메뉴에서 `일괄 명령 입력`을 선택합니다.
+3. 명령 파일 경로에 YAML 프로파일을 선택합니다.
+4. 템플릿 설정값 파일을 묻는 화면에서 장비별 값이 들어 있는 CSV/XLSX를 선택합니다.
+   인벤토리 파일에 변수 컬럼이 이미 있으면 Enter로 건너뛸 수 있습니다.
+5. 프로그램은 `device_id -> hostname -> ip` 순서로 인벤토리와 값 파일을 매칭합니다.
+6. 각 장비마다 다른 명령어가 생성되어 한 세션 안에서 실행됩니다.
+
+예를 들어 예시 CSV에서 `SW-01`은 아래와 같이 렌더링됩니다.
+
+```text
+configure terminal
+hostname BR-1F-01
+interface vlan 99
+ ip address 10.10.99.11 255.255.255.0
+ no shutdown
+ip default-gateway 10.10.99.1
+end
+write memory
+```
+
+`SW-02`는 `enable_voice_vlan=true` 이므로 같은 기본 명령에 더해 `voice_vlan` 블록도 함께 들어갑니다.
+
+알아두면 좋은 점:
+
+- 변수 타입은 `string`, `ipv4`, `int`, `bool`을 지원합니다.
+- 블록 이름이 `voice_vlan`이면 `enable_voice_vlan: false`일 때 해당 블록이 자동으로 제외됩니다.
+- 별도 값 파일을 쓰지 않아도, 인벤토리 Excel 안에 같은 변수 컬럼이 있으면 그 값을 바로 사용할 수 있습니다.
+
 ## 출력 파일
 
 생성 경로 (타임스탬프 포함):

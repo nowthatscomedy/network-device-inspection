@@ -233,6 +233,40 @@ blocks:
 If a block has a matching boolean variable like `enable_voice_vlan: false`, the CLI
 runner skips the block named `voice_vlan` automatically.
 
+Example files in this repository:
+
+- `examples/batch_command_input/profile_access_switch.yaml`
+- `examples/batch_command_input/profile_access_switch_values.csv`
+
+User workflow:
+
+1. Prepare your inventory Excel with login information. If possible, include
+   `device_id` because profile value matching prefers `device_id`, then `hostname`,
+   then `ip`.
+2. In the CLI, open `Tasks`, select `Batch command input`, and choose the YAML
+   profile file.
+3. When prompted for template values, select the CSV/XLSX file if device-specific
+   values are stored separately. Press Enter to skip it when the inventory file
+   already contains the variable columns.
+4. The CLI merges values per device and renders commands separately for each device.
+5. If `enable_<block_name>` is `false`, that block is skipped automatically.
+
+With the example files above, `SW-01` renders commands such as:
+
+```text
+configure terminal
+hostname BR-1F-01
+interface vlan 99
+ ip address 10.10.99.11 255.255.255.0
+ no shutdown
+ip default-gateway 10.10.99.1
+end
+write memory
+```
+
+`SW-02` renders the same base commands but also includes the `voice_vlan` block
+because `enable_voice_vlan=true`.
+
 ## Outputs
 
 Generated paths (timestamped):

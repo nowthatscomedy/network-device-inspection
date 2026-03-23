@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from core.command_templates import build_profile_command_payload, is_profile_command_path
@@ -142,3 +144,21 @@ def test_build_profile_command_payload_rejects_duplicate_match_values(tmp_path) 
         )
 
     assert "Duplicate 'device_id'" in str(exc_info.value)
+
+
+def test_example_profile_files_render_per_device_commands() -> None:
+    examples_dir = Path(__file__).resolve().parents[1] / "examples" / "batch_command_input"
+    profile_path = examples_dir / "profile_access_switch.yaml"
+    values_path = examples_dir / "profile_access_switch_values.csv"
+
+    devices, command_map, profile = build_profile_command_payload(
+        str(profile_path),
+        make_inventory(),
+        template_values_path=str(values_path),
+    )
+
+    assert profile.id == "ACCESS_SWITCH_INITIAL_SETUP"
+    assert devices[0]["_custom_command_profile_id"] == "ACCESS_SWITCH_INITIAL_SETUP"
+    assert command_map["192.0.2.10"][1] == "hostname BR-1F-01"
+    assert not any("switchport voice vlan 20" in line for line in command_map["192.0.2.10"])
+    assert any("switchport voice vlan 30" in line for line in command_map["192.0.2.11"])

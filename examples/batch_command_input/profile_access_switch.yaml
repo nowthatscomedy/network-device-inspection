@@ -1,0 +1,63 @@
+id: ACCESS_SWITCH_INITIAL_SETUP
+vendor: CISCO
+model: Catalyst
+firmware: IOS-XE 17.x
+description: Per-device batch command template for initial access switch setup.
+description_ko: 장비별 변수로 초기 스위치 설정 명령을 생성하는 예시 프로파일.
+variables:
+  new_hostname:
+    required: true
+    type: string
+    description: Hostname to apply on the device
+    description_ko: 장비에 적용할 호스트명
+  mgmt_vlan:
+    required: false
+    type: int
+    default: 99
+    description: Management VLAN interface number
+    description_ko: 관리용 VLAN 번호
+  mgmt_ip:
+    required: true
+    type: ipv4
+    description: Management IP address
+    description_ko: 관리 IP 주소
+  mgmt_mask:
+    required: true
+    type: ipv4
+    description: Management subnet mask
+    description_ko: 관리 서브넷 마스크
+  default_gw:
+    required: true
+    type: ipv4
+    description: Default gateway
+    description_ko: 기본 게이트웨이
+  enable_voice_vlan:
+    required: false
+    type: bool
+    default: false
+    description: Enable the optional voice VLAN block
+    description_ko: 음성 VLAN 블록 적용 여부
+  voice_vlan:
+    required: false
+    type: int
+    default: 20
+    description: Voice VLAN number when enabled
+    description_ko: 음성 VLAN 번호
+blocks:
+  - name: base
+    lines:
+      - "configure terminal"
+      - "hostname {{ new_hostname }}"
+      - "interface vlan {{ mgmt_vlan }}"
+      - " ip address {{ mgmt_ip }} {{ mgmt_mask }}"
+      - " no shutdown"
+      - "ip default-gateway {{ default_gw }}"
+  - name: voice_vlan
+    lines:
+      - "interface gigabitEthernet1/0/10"
+      - " switchport access vlan 10"
+      - " switchport voice vlan {{ voice_vlan }}"
+  - name: save
+    lines:
+      - "end"
+      - "write memory"
