@@ -1,0 +1,3 @@
+device_id,new_hostname,mgmt_vlan,mgmt_ip,mgmt_mask,default_gw,enable_voice_vlan,voice_vlan
+SW-01,BR-1F-01,99,10.10.99.11,255.255.255.0,10.10.99.1,false,20
+SW-02,BR-1F-02,99,10.10.99.12,255.255.255.0,10.10.99.1,true,30
